@@ -767,13 +767,13 @@ input,select,textarea{font-family:var(--sans);}
     <div class="modal-body" id="composeModalBody"></div>
     <div class="modal-foot">
       <button class="btn btn-ghost" data-close-modal="composeModal">Cancel</button>
-      <button class="btn btn-ghost" id="copyEmailBtn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-        Copy Text
+      <button class="btn btn-ghost" id="logOnlyBtn" title="Record this email as sent without sending it">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Log Only
       </button>
       <button class="btn btn-brass" id="sendEmailBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-        Open in Email & Log
+        Send via Brevo
       </button>
     </div>
   </div>
@@ -801,6 +801,351 @@ var STAGES = {
   'lost':      {label:'Lost',         color:'var(--rust)'}
 };
 var FOLLOWUP_DAYS = 5;
+
+/* ===== EMBEDDED EMAIL TEMPLATE ENGINE (18 approved bodies) ===== */
+/* ============================================================
+   REPRISE ELECTRICAL — EMAIL TEMPLATE ENGINE
+   18 approved bodies (6 industries x 3 stages) in the HTML shell.
+   buildEmail(industry, stage, ctx) -> { subject, html }
+   ============================================================ */
+var EmailEngine = (function(){
+'use strict';
+
+/* ---- sender identities ---- */
+var SENDERS = {
+  chris: {
+    name:'Christopher Langen', title:'Director', email:'chris@repriseelectrical.com.au',
+    phone:'0400006008', phoneDisplay:'0400 006 008'
+  },
+  adrian: {
+    name:'Adrian Langen', title:'Founder & Director', email:'adrian@repriseelectrical.com.au',
+    phone:'0400006008', phoneDisplay:'0400 006 008'
+  }
+};
+
+/* ---- 18 approved bodies ----
+   Each: salutation (headline), paras [], quote.
+   {C}=contact name, {CO}=company name, intro line is shared. */
+var INTRO = 'My name is {SENDER}. I co-founded Reprise Electrical to give Sydney\u2019s most demanding properties the electrical contractor they actually deserve.';
+
+var BODIES = {
+  Hotel:{
+    initial:{
+      head:'For the attention of {C},<br/><em>{CO}.</em>',
+      paras:[
+        INTRO,
+        'We hold the electrical maintenance contracts at Chifley Tower and the International Convention Centre Sydney \u2014 properties where failure is simply not an option. We\u2019re selective about who we work with, because the standard we maintain demands it.',
+        'Hotels are different to offices. A fault at 2am is not a facilities inconvenience \u2014 it is a guest experience failure. A complaint. A review. A compliance exposure. The kind of problem that should not exist if the right contractor is in place.',
+        'I would welcome ten minutes of your time \u2014 not to pitch, but to understand your property and see if there is a fit. If there is not, I will tell you plainly.'
+      ],
+      quote:'\u201C99.9% electrical uptime at Chifley Tower. Zero electrical disruptions across hundreds of events at the ICC Sydney.\u201D'
+    },
+    followup:{
+      head:'A brief follow-up \u2014 {C},<br/><em>{CO}.</em>',
+      paras:[
+        'I wrote to you last week about Reprise Electrical, and I know how full a facilities inbox gets \u2014 so this is simply a short note to put us back on your radar.',
+        'The offer stands: ten minutes, no pitch, just a conversation about your property and whether there is a fit. The properties we maintain \u2014 Chifley Tower, the ICC Sydney \u2014 trust us because hotel-grade reliability is exactly what we are built for.',
+        'If now is not the right time, a one-line reply to say so is genuinely welcome. If it is, I will make the next step easy.'
+      ],
+      quote:'\u201CTen minutes, no pitch \u2014 just a conversation about whether there is a fit.\u201D'
+    },
+    closing:{
+      head:'Closing the loop \u2014 {C},<br/><em>{CO}.</em>',
+      paras:[
+        'I have written to you a couple of times about Reprise Electrical, and I do not want to keep arriving in your inbox uninvited \u2014 so this will be my last note.',
+        'If the timing is simply not right, that is completely understood. The work we do for properties like Chifley Tower and the ICC Sydney is not going anywhere, and neither is the offer.',
+        'Should the day come when your property needs an electrical contractor who treats hotel-grade reliability as the baseline, I would be glad to hear from you. My details are below \u2014 please keep them on hand.'
+      ],
+      quote:'\u201CThe offer is not going anywhere. Whenever the time is right, we would be glad to hear from you.\u201D'
+    }
+  },
+  Restaurant:{
+    initial:{
+      head:'For the attention of {C},<br/><em>{CO}.</em>',
+      paras:[
+        'My name is {SENDER}. I co-founded Reprise Electrical to give Sydney\u2019s venues the electrical contractor they actually deserve \u2014 one that works to the standard a serious operator expects.',
+        'A restaurant runs on its kitchen and its room. A tripped circuit during service, a cold room that fails overnight, a dimmer that dies mid-sitting \u2014 these are not maintenance tickets. They are lost covers, spoiled stock, and a night you cannot get back.',
+        'Electrical work in a restaurant has to be fast, clean, and done around your service rather than across it. That means a contractor who understands how a kitchen and a dining room actually operate, turns up when they say they will, and leaves the place exactly as they found it.',
+        'I would welcome ten minutes of your time \u2014 not to pitch, but to understand how your venue runs and see if there is a fit. If there is not, I will tell you plainly.'
+      ],
+      quote:'\u201CElectrical work done around your service \u2014 not across it.\u201D'
+    },
+    followup:{
+      head:'A brief follow-up \u2014 {C},<br/><em>{CO}.</em>',
+      paras:[
+        'I wrote to you last week about Reprise Electrical, and I know a kitchen leaves little time for inboxes \u2014 so this is just a short note to follow up.',
+        'The offer is unchanged: ten minutes, no pitch, simply a conversation about how your venue runs and whether an electrician who works around your service rather than across it would be useful to you.',
+        'If the timing is wrong, a one-line reply to say so is genuinely welcome. If it is not, I will make the next step easy.'
+      ],
+      quote:'\u201CTen minutes, no pitch \u2014 a conversation about whether there is a fit.\u201D'
+    },
+    closing:{
+      head:'Closing the loop \u2014 {C},<br/><em>{CO}.</em>',
+      paras:[
+        'I have written to you a couple of times about Reprise Electrical, and I do not want to keep crowding your inbox \u2014 so this will be my last note.',
+        'If the timing is not right, that is completely understood. Restaurants change, contractors change, and the need has a way of arriving when you least expect it.',
+        'If the day comes when your venue needs an electrician who works around your service rather than across it, I would be glad to hear from you. My details are below \u2014 please keep them on hand.'
+      ],
+      quote:'\u201CThe need has a way of arriving when you least expect it. We will be here when it does.\u201D'
+    }
+  },
+  Pub:{
+    initial:{
+      head:'For the attention of {C},<br/><em>{CO}.</em>',
+      paras:[
+        'My name is {SENDER}. I co-founded Reprise Electrical to give Sydney\u2019s venues the electrical contractor they actually deserve \u2014 one that works to the standard a serious operator expects.',
+        'A pub is open when other trades have gone home. Gaming, cool rooms, kitchen, AV, and the lighting that sets the room all draw hard, all day, often well into the night. When something fails, it fails in front of a full room.',
+        'You need an electrician who works to your trading hours and your compliance obligations rather than against them \u2014 someone who can keep a long, demanding day running, and respond quickly when it counts.',
+        'I would welcome ten minutes of your time \u2014 not to pitch, but to understand your venue and see if there is a fit. If there is not, I will tell you plainly.'
+      ],
+      quote:'\u201CAn electrician who works to your trading hours \u2014 not against them.\u201D'
+    },
+    followup:{
+      head:'A brief follow-up \u2014 {C},<br/><em>{CO}.</em>',
+      paras:[
+        'I wrote to you last week about Reprise Electrical, and I know a busy pub leaves little room for email \u2014 so this is simply a short note to follow up.',
+        'The offer stands: ten minutes, no pitch, just a conversation about your venue and whether an electrician who works to your trading hours would be worth having on hand.',
+        'If now is not the right time, a one-line reply to say so is genuinely welcome. If it is, I will make the next step easy.'
+      ],
+      quote:'\u201CTen minutes, no pitch \u2014 a conversation about whether there is a fit.\u201D'
+    },
+    closing:{
+      head:'Closing the loop \u2014 {C},<br/><em>{CO}.</em>',
+      paras:[
+        'I have written to you a couple of times about Reprise Electrical, and I do not want to keep arriving in your inbox uninvited \u2014 so this will be my last note.',
+        'If the timing is simply not right, that is completely understood. The offer stands, and there is no expiry on it.',
+        'Should the day come when your venue needs an electrician who works to your trading hours and keeps a long day running, I would be glad to hear from you. My details are below \u2014 please keep them on hand.'
+      ],
+      quote:'\u201CThe offer stands, and there is no expiry on it. We will be here when you need us.\u201D'
+    }
+  },
+  Club:{
+    initial:{
+      head:'For the attention of {C},<br/><em>{CO}.</em>',
+      paras:[
+        'My name is {SENDER}. I co-founded Reprise Electrical to give Sydney\u2019s venues the electrical contractor they actually deserve \u2014 one that works to the standard a serious operator expects.',
+        'A licensed club is a complex building \u2014 gaming floors, function rooms, kitchens, car parks, and emergency and exit lighting all under one roof, all subject to scheduled compliance.',
+        'An electrical contractor for a club has to understand testing regimes and certification as well as the day-to-day work, and keep a large site running without disrupting members or events. It is detailed, obligation-heavy work, and it has to be done by someone who treats it that way.',
+        'I would welcome ten minutes of your time \u2014 not to pitch, but to understand your club and see if there is a fit. If there is not, I will tell you plainly.'
+      ],
+      quote:'\u201CCompliance, gaming floor and members \u2014 a large site kept running without disruption.\u201D'
+    },
+    followup:{
+      head:'A brief follow-up \u2014 {C},<br/><em>{CO}.</em>',
+      paras:[
+        'I wrote to you last week about Reprise Electrical, and I know a club of any size keeps a manager fully occupied \u2014 so this is just a short note to follow up.',
+        'The offer is unchanged: ten minutes, no pitch, simply a conversation about your club and whether a contractor who treats compliance and certification as seriously as the day-to-day would be useful to you.',
+        'If the timing is wrong, a one-line reply to say so is genuinely welcome. If it is not, I will make the next step easy.'
+      ],
+      quote:'\u201CTen minutes, no pitch \u2014 a conversation about whether there is a fit.\u201D'
+    },
+    closing:{
+      head:'Closing the loop \u2014 {C},<br/><em>{CO}.</em>',
+      paras:[
+        'I have written to you a couple of times about Reprise Electrical, and I do not want to keep crowding your inbox \u2014 so this will be my last note.',
+        'If the timing is not right, that is completely understood. Compliance schedules and contracts come around in their own time, and there is no rush from our side.',
+        'If the day comes when your club needs a contractor who treats certification and compliance as seriously as the day-to-day, I would be glad to hear from you. My details are below \u2014 please keep them on hand.'
+      ],
+      quote:'\u201CContracts come around in their own time. We will be here when yours does.\u201D'
+    }
+  },
+  Retail:{
+    initial:{
+      head:'For the attention of {C},<br/><em>{CO}.</em>',
+      paras:[
+        'My name is {SENDER}. I co-founded Reprise Electrical to give Sydney\u2019s businesses the electrical contractor they actually deserve \u2014 one that works to the standard a serious operator expects.',
+        'In retail, electrical work is rarely just maintenance. Lighting is presentation. A fit-out has a deadline that does not move. A failed circuit in trading hours is lost sales and a poor impression.',
+        'You need a contractor who delivers clean work on schedule, understands that the way a space is lit is part of the way it sells, and is there quickly when trading depends on it.',
+        'I would welcome ten minutes of your time \u2014 not to pitch, but to understand your space and see if there is a fit. If there is not, I will tell you plainly.'
+      ],
+      quote:'\u201CClean work, delivered on schedule \u2014 because in retail, lighting is part of the sale.\u201D'
+    },
+    followup:{
+      head:'A brief follow-up \u2014 {C},<br/><em>{CO}.</em>',
+      paras:[
+        'I wrote to you last week about Reprise Electrical, and I know retail keeps you on the floor rather than in your inbox \u2014 so this is simply a short note to follow up.',
+        'The offer stands: ten minutes, no pitch, just a conversation about your space and whether a contractor who delivers clean work on schedule would be worth knowing.',
+        'If now is not the right time, a one-line reply to say so is genuinely welcome. If it is, I will make the next step easy.'
+      ],
+      quote:'\u201CTen minutes, no pitch \u2014 a conversation about whether there is a fit.\u201D'
+    },
+    closing:{
+      head:'Closing the loop \u2014 {C},<br/><em>{CO}.</em>',
+      paras:[
+        'I have written to you a couple of times about Reprise Electrical, and I do not want to keep arriving in your inbox uninvited \u2014 so this will be my last note.',
+        'If the timing is simply not right, that is completely understood. Fit-outs, refreshes and the need for reliable work all arrive on their own schedule.',
+        'Should the day come when your space needs a contractor who delivers clean work on time, I would be glad to hear from you. My details are below \u2014 please keep them on hand.'
+      ],
+      quote:'\u201CThe work arrives on its own schedule. We will be here when yours does.\u201D'
+    }
+  },
+  Office:{
+    initial:{
+      head:'For the attention of {C},<br/><em>{CO}.</em>',
+      paras:[
+        'My name is {SENDER}. I co-founded Reprise Electrical to give Sydney\u2019s commercial properties the electrical contractor they actually deserve \u2014 one that works to the standard a serious building demands.',
+        'An office runs on continuity. Power, lighting, data, and emergency and exit systems all have to simply work, and all carry compliance obligations that do not pause.',
+        'The right contractor keeps a building running quietly in the background \u2014 planned maintenance done properly, certification kept in order, and a fast, capable response on the rare occasion something goes wrong.',
+        'I would welcome ten minutes of your time \u2014 not to pitch, but to understand your building and see if there is a fit. If there is not, I will tell you plainly.'
+      ],
+      quote:'\u201CA building kept running quietly in the background \u2014 maintenance done properly, certification in order.\u201D'
+    },
+    followup:{
+      head:'A brief follow-up \u2014 {C},<br/><em>{CO}.</em>',
+      paras:[
+        'I wrote to you last week about Reprise Electrical, and I know a facilities inbox fills quickly \u2014 so this is just a short note to follow up.',
+        'The offer is unchanged: ten minutes, no pitch, simply a conversation about your building and whether a contractor who keeps things running quietly in the background \u2014 maintenance done properly, certification in order \u2014 would be useful to you.',
+        'If the timing is wrong, a one-line reply to say so is genuinely welcome. If it is not, I will make the next step easy.'
+      ],
+      quote:'\u201CTen minutes, no pitch \u2014 a conversation about whether there is a fit.\u201D'
+    },
+    closing:{
+      head:'Closing the loop \u2014 {C},<br/><em>{CO}.</em>',
+      paras:[
+        'I have written to you a couple of times about Reprise Electrical, and I do not want to keep crowding your inbox \u2014 so this will be my last note.',
+        'If the timing is not right, that is completely understood. Maintenance arrangements and building contracts come around in their own time, and there is no pressure from us.',
+        'If the day comes when your building needs a contractor who keeps things running quietly and properly in the background, I would be glad to hear from you. My details are below \u2014 please keep them on hand.'
+      ],
+      quote:'\u201CNo pressure, and no expiry. We will be here when the time is right.\u201D'
+    }
+  }
+};
+
+/* ---- subject lines per stage ---- */
+var SUBJECTS = {
+  initial:  'Electrical services for {CO}',
+  followup: 'Following up \u2014 Reprise Electrical & {CO}',
+  closing:  'One last note \u2014 Reprise Electrical'
+};
+
+/* ---- escape for safe HTML insertion ---- */
+function esc(s){
+  return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+  });
+}
+
+/* ---- the HTML shell. {{HEAD}} {{BODY}} {{QUOTE}} {{SIG_*}} swapped in ---- */
+function shell(){
+  return '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">\n'+
+'<html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head>'+
+'<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>'+
+'<meta name="viewport" content="width=device-width, initial-scale=1.0"/>'+
+'<meta name="x-apple-disable-message-reformatting"/>'+
+'<style type="text/css">'+
+"@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Jost:wght@300;400;500&display=swap');"+
+'body,table,td,a{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;}'+
+'table,td{mso-table-lspace:0pt;mso-table-rspace:0pt;}'+
+'body{margin:0!important;padding:0!important;background-color:#faf8f4;width:100%!important;}'+
+'a{color:inherit;text-decoration:none;}'+
+'@media screen and (max-width:620px){.email-wrapper{width:100%!important;}.pad{padding-left:32px!important;padding-right:32px!important;}.hide-sm{display:none!important;}.h1{font-size:32px!important;line-height:40px!important;}}'+
+'</style></head>'+
+'<body style="margin:0;padding:0;background-color:#faf8f4;">'+
+'<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#faf8f4;"><tr><td align="center">'+
+'<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="620" class="email-wrapper" style="background:#faf8f4;max-width:620px;">'+
+'<tr><td><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="height:3px;background:#111;font-size:0;">&nbsp;</td></tr></table></td></tr>'+
+/* wordmark */
+'<tr><td style="padding:40px 64px 36px;" class="pad"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>'+
+'<td><a href="https://www.repriseelectrical.com.au" style="text-decoration:none;"><span style="font-family:\'Cormorant Garamond\',Georgia,serif;font-size:13px;font-weight:500;letter-spacing:8px;color:#111;text-transform:uppercase;">REPRISE</span><span style="font-family:Helvetica,Arial,sans-serif;font-size:8px;font-weight:400;letter-spacing:5px;color:#999;text-transform:uppercase;margin-left:10px;">Electrical</span></a></td>'+
+'<td align="right" class="hide-sm"><span style="font-family:Helvetica,Arial,sans-serif;font-size:8px;letter-spacing:3px;color:#aaa;text-transform:uppercase;">Sydney, NSW</span></td>'+
+'</tr></table></td></tr>'+
+'<tr><td style="padding:0 64px;" class="pad"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="height:1px;background:#e0dbd2;font-size:0;">&nbsp;</td></tr></table></td></tr>'+
+/* date */
+'<tr><td style="padding:28px 64px 0;" class="pad"><p style="margin:0;font-family:Helvetica,Arial,sans-serif;font-size:9px;letter-spacing:3px;color:#aaa;text-transform:uppercase;">{{DATE}}</p></td></tr>'+
+/* salutation */
+'<tr><td style="padding:28px 64px 0;" class="pad">'+
+'<p style="margin:0 0 12px 0;font-family:Helvetica,Arial,sans-serif;font-size:9px;letter-spacing:3px;color:#999;text-transform:uppercase;">Reprise Electrical</p>'+
+'<h1 class="h1" style="margin:0 0 44px 0;font-family:\'Cormorant Garamond\',Georgia,serif;font-size:46px;font-weight:300;line-height:56px;color:#111;letter-spacing:-0.5px;">{{HEAD}}</h1>'+
+'</td></tr>'+
+'<tr><td style="padding:0 64px 36px;" class="pad"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="height:1px;background:#e0dbd2;font-size:0;">&nbsp;</td></tr></table></td></tr>'+
+/* body */
+'<tr><td style="padding:0 64px;" class="pad">{{BODY}}</td></tr>'+
+/* pull quote */
+'<tr><td style="padding:0 64px 44px;" class="pad"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-left:2px solid #111;"><tr><td style="padding:6px 0 6px 28px;">'+
+'<p style="margin:0;font-family:\'Cormorant Garamond\',Georgia,serif;font-size:23px;font-weight:300;font-style:italic;line-height:34px;color:#111;">{{QUOTE}}</p>'+
+'</td></tr></table></td></tr>'+
+/* CTA */
+'<tr><td style="padding:0 64px 52px;" class="pad"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>'+
+'<td style="padding-right:28px;"><a href="mailto:{{SIG_EMAIL}}?subject={{CO_ENC}}" style="display:inline-block;background:#111;color:#faf8f4;font-family:Helvetica,Arial,sans-serif;font-size:9px;font-weight:500;letter-spacing:3px;text-transform:uppercase;text-decoration:none;padding:15px 30px;">Reply to arrange a call</a></td>'+
+'<td><a href="https://www.repriseelectrical.com.au/maintenance" style="font-family:Helvetica,Arial,sans-serif;font-size:9px;font-weight:500;letter-spacing:3px;color:#111;text-transform:uppercase;border-bottom:1px solid #aaa;padding-bottom:3px;">View our work &rarr;</a></td>'+
+'</tr></table></td></tr>'+
+'<tr><td style="padding:0 64px;" class="pad"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="height:1px;background:#e0dbd2;font-size:0;">&nbsp;</td></tr></table></td></tr>'+
+/* signoff */
+'<tr><td style="padding:36px 64px 48px;" class="pad">'+
+'<p style="margin:0 0 4px 0;font-family:Helvetica,Arial,sans-serif;font-size:12px;font-weight:300;color:#999;">Yours sincerely,</p>'+
+'<p style="margin:0 0 2px 0;font-family:\'Cormorant Garamond\',Georgia,serif;font-size:28px;font-weight:400;color:#111;">{{SIG_NAME}}</p>'+
+'<p style="margin:0 0 22px 0;font-family:Helvetica,Arial,sans-serif;font-size:9px;letter-spacing:2px;color:#999;text-transform:uppercase;">{{SIG_TITLE}} &middot; Reprise Electrical Pty Ltd</p>'+
+'<p style="margin:0;font-family:Helvetica,Arial,sans-serif;font-size:12px;font-weight:300;line-height:22px;color:#555;">'+
+'<a href="tel:{{SIG_PHONE}}" style="color:#111;font-weight:400;border-bottom:1px solid #ddd;">{{SIG_PHONE_D}}</a><br/>'+
+'<a href="mailto:{{SIG_EMAIL}}" style="color:#111;font-weight:400;border-bottom:1px solid #ddd;">{{SIG_EMAIL}}</a><br/>'+
+'<a href="https://www.repriseelectrical.com.au" style="color:#111;font-weight:400;border-bottom:1px solid #ddd;">repriseelectrical.com.au</a>'+
+'</p></td></tr>'+
+/* footer */
+'<tr><td style="padding:20px 64px;background:#f0ede6;border-top:1px solid #e0dbd2;" class="pad"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>'+
+'<td style="font-family:Helvetica,Arial,sans-serif;font-size:9px;letter-spacing:2px;color:#aaa;text-transform:uppercase;">ABN 44 654 866 490 &middot; A-Grade Licensed &middot; $20M Insured</td>'+
+'<td align="right" style="font-family:Helvetica,Arial,sans-serif;font-size:9px;color:#aaa;"><a href="https://www.repriseelectrical.com.au/privacy" style="color:#888;">Privacy</a></td>'+
+'</tr></table></td></tr>'+
+'<tr><td><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="height:3px;background:#111;font-size:0;">&nbsp;</td></tr></table></td></tr>'+
+'</table></td></tr></table></body></html>';
+}
+
+/* ---- build a finished email ---- */
+function buildEmail(industry, stage, ctx){
+  /* ctx: { sender:'chris'|'adrian', contactName, companyName } */
+  var sender = SENDERS[ctx.sender] || SENDERS.chris;
+  var ind = BODIES[industry] ? industry : 'Office'; /* safe fallback */
+  var tpl = BODIES[ind][stage];
+  if(!tpl) throw new Error('No template for '+industry+'/'+stage);
+
+  var contact = ctx.contactName || 'there';
+  var company = ctx.companyName || 'your business';
+  var firstName = String(contact).trim().split(/\s+/)[0] || 'there';
+
+  function fill(s){
+    return s.replace(/\{SENDER\}/g, esc(sender.name))
+            .replace(/\{C\}/g, esc(firstName))
+            .replace(/\{CO\}/g, esc(company));
+  }
+
+  var bodyHTML = tpl.paras.map(function(p,i){
+    var first = (i===0);
+    var size = first? '22px':'14px';
+    var famly = first? "'Cormorant Garamond',Georgia,serif":'Helvetica,Arial,sans-serif';
+    var color = first? '#222':'#444';
+    var last = (i===tpl.paras.length-1);
+    var mb = last? '44px':'24px';
+    return '<p style="margin:0 0 '+mb+' 0;font-family:'+famly+';font-size:'+size+
+      ';font-weight:300;line-height:'+(first?'34px':'26px')+';color:'+color+';">'+
+      fill(p)+'</p>';
+  }).join('');
+
+  var html = shell()
+    .replace(/\{\{DATE\}\}/g, esc(monthYear()))
+    .replace(/\{\{HEAD\}\}/g, fill(tpl.head))
+    .replace(/\{\{BODY\}\}/g, bodyHTML)
+    .replace(/\{\{QUOTE\}\}/g, fill(tpl.quote))
+    .replace(/\{\{SIG_NAME\}\}/g, esc(sender.name))
+    .replace(/\{\{SIG_TITLE\}\}/g, esc(sender.title))
+    .replace(/\{\{SIG_EMAIL\}\}/g, esc(sender.email))
+    .replace(/\{\{SIG_PHONE\}\}/g, esc(sender.phone))
+    .replace(/\{\{SIG_PHONE_D\}\}/g, esc(sender.phoneDisplay))
+    .replace(/\{\{CO_ENC\}\}/g, encodeURIComponent(company));
+
+  var subject = SUBJECTS[stage].replace(/\{CO\}/g, company);
+
+  return { subject: subject, html: html, fromEmail: sender.email,
+           fromName: 'Reprise Electrical', replyTo: sender.email };
+}
+
+function monthYear(){
+  var d = new Date();
+  return d.toLocaleDateString('en-AU',{month:'long',year:'numeric'});
+}
+
+return { buildEmail: buildEmail, SENDERS: SENDERS, BODIES: BODIES };
+})();
+
+/* ===== END EMAIL ENGINE ===== */
 
 var USERS = {
   chris:  {name:'Chris',  initial:'C', role:'Director'},
@@ -1817,68 +2162,44 @@ function renderSettings(){
     '</div>'+
 
     '<div class="panel settings-card" style="margin-bottom:18px;">'+
-      '<div class="panel-head"><div class="panel-title">Your Email Signature</div>'+
+      '<div class="panel-head"><div class="panel-title">Sender Details</div>'+
         '<div class="panel-tag">'+esc(USERS[u].name)+'</div></div>'+
       '<p style="font-size:12px;color:var(--text-mut);margin-bottom:14px;line-height:1.6;">'+
-        'This signature is automatically added to every email you compose. '+
-        'Adrian and Chris each have their own — whoever is signed in, their signature is used.</p>'+
-      '<div class="form-field">'+
-        '<label>Signature Text</label>'+
-        '<textarea id="sigInput" style="min-height:150px;">'+esc(state.signatures[u])+'</textarea>'+
+        'These details appear in the signature of every email you send. '+
+        'Whoever is signed in, their details are used automatically — Christopher and '+
+        'Adrian each send under their own name.</p>'+
+      '<div class="field-grid">'+
+        senderField('Name', EmailEngine.SENDERS[u].name)+
+        senderField('Title', EmailEngine.SENDERS[u].title)+
+        senderField('Email', EmailEngine.SENDERS[u].email)+
+        senderField('Phone', EmailEngine.SENDERS[u].phoneDisplay)+
       '</div>'+
-      '<div class="field-label" style="margin-top:14px;">Preview</div>'+
-      '<div class="sig-preview" id="sigPreview">'+esc(state.signatures[u])+'</div>'+
-      '<div style="margin-top:14px;display:flex;gap:9px;">'+
-        '<button class="btn btn-primary" id="saveSigBtn">Save Signature</button>'+
-        '<button class="btn btn-ghost" id="resetSigBtn">Reset to Default</button>'+
+      '<div class="compose-hint" style="margin-top:14px;">'+
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>'+
+        '<div>To change these, they need to be edited in the email engine — let your '+
+        'developer know and they can update them in one place.</div>'+
       '</div>'+
     '</div>'+
 
     '<div class="panel settings-card">'+
       '<div class="panel-head"><div class="panel-title">Email Templates</div>'+
-        '<div class="panel-tag">Shared</div></div>'+
-      '<p style="font-size:12px;color:var(--text-mut);margin-bottom:8px;line-height:1.6;">'+
-        'These templates auto-fill when you compose. Use these placeholders and they '+
-        'will be replaced automatically:</p>'+
-      '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:18px;">'+
-        placeholderPill('{name}','contact first name')+
-        placeholderPill('{company}','company name')+
-        placeholderPill('{sender}','your name')+
-        placeholderPill('{signature}','your signature')+
+        '<div class="panel-tag">18 Approved</div></div>'+
+      '<p style="font-size:12px;color:var(--text-mut);margin-bottom:14px;line-height:1.6;">'+
+        'Each email button uses a pre-approved, professionally designed template. '+
+        'The right one is chosen automatically from the company\u2019s industry and the '+
+        'contact\u2019s name is filled in for you. There are six industry versions of each:</p>'+
+      '<div style="display:flex;flex-direction:column;gap:10px;">'+
+        templateRow('Initial Email','Sent as the first cold approach. Six industry versions.')+
+        templateRow('Follow-up Email','Sent '+FOLLOWUP_DAYS+' days after the initial, if no reply. Six versions.')+
+        templateRow('Closing Email','A graceful final note. Six versions.')+
       '</div>'+
-      templateEditor('initial','Initial Email')+
-      templateEditor('followup','Follow-up Email')+
-      templateEditor('closing','Closing Email')+
-      '<div style="margin-top:6px;display:flex;gap:9px;">'+
-        '<button class="btn btn-primary" id="saveTplBtn">Save Templates</button>'+
-        '<button class="btn btn-ghost" id="resetTplBtn">Reset to Defaults</button>'+
+      '<div class="compose-hint" style="margin-top:14px;">'+
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>'+
+        '<div>You preview the exact email before sending. To change the wording of a '+
+        'template, it must be updated in the email engine — these are fixed in the app '+
+        'so outreach stays consistent and approved.</div>'+
       '</div>'+
     '</div>';
-
-  /* live preview */
-  var sigInput = document.getElementById('sigInput');
-  sigInput.addEventListener('input',function(){
-    document.getElementById('sigPreview').textContent = sigInput.value;
-  });
-  document.getElementById('saveSigBtn').addEventListener('click',function(){
-    state.signatures[u] = sigInput.value;
-    saveState(); toast('Signature saved');
-  });
-  document.getElementById('resetSigBtn').addEventListener('click',function(){
-    state.signatures[u] = DEFAULT_SIGNATURES[u];
-    saveState(); renderSettings(); toast('Signature reset');
-  });
-  document.getElementById('saveTplBtn').addEventListener('click',function(){
-    ['initial','followup','closing'].forEach(function(t){
-      state.templates[t].subject = document.getElementById('tpl-'+t+'-subject').value;
-      state.templates[t].body = document.getElementById('tpl-'+t+'-body').value;
-    });
-    saveState(); toast('Templates saved');
-  });
-  document.getElementById('resetTplBtn').addEventListener('click',function(){
-    state.templates = JSON.parse(JSON.stringify(DEFAULT_TEMPLATES));
-    saveState(); renderSettings(); toast('Templates reset');
-  });
 
   /* ---- sync controls ---- */
   var syncMsg = document.getElementById('syncMsg');
@@ -1955,20 +2276,19 @@ function renderSettings(){
     });
   }
 }
-function placeholderPill(code,desc){
-  return '<span style="font-family:var(--mono);font-size:10px;background:var(--ink);'+
-    'color:var(--brass-lt);padding:5px 9px;border-radius:3px;" title="'+esc(desc)+'">'+esc(code)+'</span>';
+function senderField(label,value){
+  return '<div class="field"><div class="field-label">'+esc(label)+'</div>'+
+    '<div class="field-value">'+esc(value)+'</div></div>';
 }
-function templateEditor(type,label){
-  var t = state.templates[type];
-  return '<div style="margin-bottom:18px;">'+
-    '<div class="field-label" style="margin-bottom:8px;">'+esc(label)+'</div>'+
-    '<div class="form-field" style="margin-bottom:8px;">'+
-      '<input type="text" id="tpl-'+type+'-subject" value="'+esc(t.subject)+'" placeholder="Subject line">'+
+function templateRow(title,desc){
+  return '<div style="display:flex;gap:12px;align-items:flex-start;padding:12px 14px;'+
+    'background:var(--paper-2);border:1px solid var(--line);border-radius:3px;">'+
+    '<div style="width:30px;height:30px;border-radius:50%;flex-shrink:0;background:var(--ink);'+
+      'color:var(--brass-lt);display:flex;align-items:center;justify-content:center;">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="15" height="15"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>'+
     '</div>'+
-    '<div class="form-field">'+
-      '<textarea id="tpl-'+type+'-body" style="min-height:120px;">'+esc(t.body)+'</textarea>'+
-    '</div>'+
+    '<div><div style="font-size:12px;color:var(--ink);font-weight:500;">'+esc(title)+'</div>'+
+    '<div style="font-size:11px;color:var(--text-mut);margin-top:2px;">'+esc(desc)+'</div></div>'+
   '</div>';
 }
 
@@ -2113,14 +2433,7 @@ function saveCompany(){
    ============================================================ */
 var composeContext = null;
 
-function fillTemplate(str, ctx){
-  return str
-    .replace(/\{name\}/g, ctx.contactFirst)
-    .replace(/\{company\}/g, ctx.companyName)
-    .replace(/\{sender\}/g, ctx.senderName)
-    .replace(/\{signature\}/g, ctx.signature);
-}
-
+/* maps CRM industry -> engine. Engine handles all six. */
 function openComposeModal(companyId, type){
   var c = companyById(companyId);
   if(!c){ return; }
@@ -2131,27 +2444,21 @@ function openComposeModal(companyId, type){
     return;
   }
 
-  var u = state.currentUser;
-  var tpl = state.templates[type];
-  var ctx = {
-    contactFirst: firstName(primary.name),
-    companyName: c.name,
-    senderName: USERS[u].name,
-    signature: state.signatures[u]
-  };
-  var subject = fillTemplate(tpl.subject, ctx);
-  var bodyText = fillTemplate(tpl.body, ctx);
+  var u = state.currentUser;          /* 'chris' | 'adrian' */
+  var industry = c.industry || 'Office';
 
   composeContext = {
-    companyId: companyId, type: type,
-    to: primary.email, contactName: primary.name
+    companyId: companyId, type: type, industry: industry,
+    to: primary.email, contactName: primary.name,
+    contactIndex: 0
   };
 
   var typeLabels = {initial:'Initial Email',followup:'Follow-up Email',closing:'Closing Email'};
-  document.getElementById('composeModalTitle').textContent = typeLabels[type];
+  document.getElementById('composeModalTitle').textContent =
+    typeLabels[type]+' — '+industry;
 
   /* contact picker if multiple */
-  var contactPicker = '';
+  var contactPicker;
   if(contacts.length>1){
     contactPicker = '<div class="compose-row">'+
       '<div class="cr-label">To</div>'+
@@ -2167,52 +2474,149 @@ function openComposeModal(companyId, type){
       '<div class="cr-value">'+esc(primary.name)+' — '+esc(primary.email)+'</div></div>';
   }
 
+  var senderInfo = EmailEngine.SENDERS[u] || EmailEngine.SENDERS.chris;
+
   document.getElementById('composeModalBody').innerHTML =
     '<div class="compose-meta">'+
       contactPicker+
       '<div class="compose-row"><div class="cr-label">From</div>'+
-        '<div class="cr-value">'+esc(USERS[u].name)+' — Reprise Electrical</div></div>'+
+        '<div class="cr-value">'+esc(senderInfo.name)+' — '+esc(senderInfo.email)+'</div></div>'+
+      '<div class="compose-row"><div class="cr-label">Industry</div>'+
+        '<div class="cr-value">'+esc(industry)+' template (chosen automatically)</div></div>'+
     '</div>'+
     '<div class="form-field" style="margin-bottom:14px;">'+
       '<label>Subject</label>'+
-      '<input type="text" id="composeSubject" class="compose-subject-input" value="'+esc(subject)+'">'+
+      '<input type="text" id="composeSubject" class="compose-subject-input">'+
     '</div>'+
     '<div class="form-field">'+
-      '<label>Message — edit freely before sending</label>'+
-      '<textarea id="composeBody" class="compose-body-input">'+esc(bodyText)+'</textarea>'+
+      '<label>Email preview — this designed email will be sent</label>'+
+      '<div id="composePreview" style="border:1px solid var(--line);border-radius:3px;'+
+        'background:#faf8f4;height:340px;overflow-y:auto;"></div>'+
     '</div>'+
     '<div class="compose-hint">'+
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>'+
-      '<div>"Open in Email" launches your email app with everything filled in, ready for a final check and send. '+
-      'It logs the email here and '+(type==='initial'?'starts the '+FOLLOWUP_DAYS+'-day follow-up reminder.':'updates this company\'s stage.')+'</div>'+
+      '<div>This sends the designed HTML email through Brevo, from your address. '+
+      'It logs the email and '+(type==='initial'?'starts the '+FOLLOWUP_DAYS+'-day follow-up reminder.':'updates this company\'s stage.')+
+      ' The body follows the approved '+esc(industry)+' template and is not edited here — only the subject can be changed.</div>'+
     '</div>';
 
-  /* update recipient when contact changes */
+  renderComposePreview();
+
   var picker = document.getElementById('composeContact');
   if(picker){
     picker.addEventListener('change',function(){
-      var ct = contacts[parseInt(picker.value,10)];
+      var idx = parseInt(picker.value,10);
+      var ct = contacts[idx];
       composeContext.to = ct.email;
       composeContext.contactName = ct.name;
-      /* re-fill template with new contact name */
-      var newCtx = {
-        contactFirst:firstName(ct.name), companyName:c.name,
-        senderName:USERS[u].name, signature:state.signatures[u]
-      };
-      document.getElementById('composeSubject').value = fillTemplate(tpl.subject,newCtx);
-      document.getElementById('composeBody').value = fillTemplate(tpl.body,newCtx);
+      composeContext.contactIndex = idx;
+      renderComposePreview();
     });
   }
 
   openModal('composeModal');
 }
 
-function logAndSend(openClient){
+/* builds the email from the engine and shows it in the preview */
+function renderComposePreview(){
   if(!composeContext) return;
-  var subject = document.getElementById('composeSubject').value;
-  var bodyText = document.getElementById('composeBody').value;
+  var u = state.currentUser;
+  var built = EmailEngine.buildEmail(
+    composeContext.industry, composeContext.type,
+    { sender:u, contactName:composeContext.contactName,
+      companyName: (companyById(composeContext.companyId)||{}).name }
+  );
+  composeContext.builtHtml = built.html;
+  composeContext.fromEmail = built.fromEmail;
+  composeContext.fromName  = built.fromName;
+  composeContext.replyTo   = built.replyTo;
 
-  /* log the email */
+  var subjEl = document.getElementById('composeSubject');
+  if(subjEl && !subjEl.value) subjEl.value = built.subject;
+  composeContext.defaultSubject = built.subject;
+
+  var prev = document.getElementById('composePreview');
+  if(prev){
+    /* render inside an iframe so email styles don't leak into the app */
+    prev.innerHTML = '<iframe style="width:100%;height:100%;border:0;" '+
+      'sandbox="allow-same-origin"></iframe>';
+    var ifr = prev.querySelector('iframe');
+    var doc = ifr.contentDocument || ifr.contentWindow.document;
+    doc.open(); doc.write(built.html); doc.close();
+  }
+}
+
+/* sends through the Apps Script -> Brevo, then logs */
+function sendComposedEmail(){
+  if(!composeContext) return;
+  var subject = (document.getElementById('composeSubject').value||'').trim()
+                || composeContext.defaultSubject;
+  var html = composeContext.builtHtml;
+
+  if(syncMode!=='sheet' || !syncURL){
+    toast('Connect to the shared sheet first (Settings) — sending needs it');
+    return;
+  }
+  if(!html){ toast('Email not ready — reopen and try again'); return; }
+
+  var btn = document.getElementById('sendEmailBtn');
+  var prevLabel = btn ? btn.innerHTML : '';
+  if(btn){ btn.disabled = true; btn.innerHTML = 'Sending…'; }
+
+  var payload = {
+    action:'sendEmail',
+    to: composeContext.to,
+    toName: composeContext.contactName,
+    subject: subject,
+    html: html,
+    fromEmail: composeContext.fromEmail,
+    fromName: composeContext.fromName,
+    replyTo: composeContext.replyTo
+  };
+
+  fetch(syncURL,{
+    method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify(payload)
+  }).then(function(res){
+    return res.json();
+  }).then(function(json){
+    if(json && json.ok){
+      /* log the sent email */
+      state.emails.push({
+        id: uid(),
+        companyId: composeContext.companyId,
+        type: composeContext.type,
+        to: composeContext.to,
+        contactName: composeContext.contactName,
+        subject: subject,
+        sentBy: state.currentUser,
+        sentAt: Date.now(),
+        method: 'brevo'
+      });
+      saveState();
+      renderSidebarCounts();
+      toast('Email sent & logged');
+      closeModal('composeModal');
+      composeContext = null;
+      if(state.view==='detail') renderDetail();
+    } else {
+      var err = (json && json.error) ? json.error : 'Unknown error';
+      toast('Send failed: '+err);
+      if(btn){ btn.disabled=false; btn.innerHTML=prevLabel; }
+    }
+  }).catch(function(e){
+    console.error('Send error',e);
+    toast('Send failed — check connection and try again');
+    if(btn){ btn.disabled=false; btn.innerHTML=prevLabel; }
+  });
+}
+
+/* logs the email WITHOUT sending — for when sent manually elsewhere */
+function logWithoutSending(){
+  if(!composeContext) return;
+  var subject = (document.getElementById('composeSubject').value||'').trim()
+                || composeContext.defaultSubject;
   state.emails.push({
     id: uid(),
     companyId: composeContext.companyId,
@@ -2221,46 +2625,16 @@ function logAndSend(openClient){
     contactName: composeContext.contactName,
     subject: subject,
     sentBy: state.currentUser,
-    sentAt: Date.now()
+    sentAt: Date.now(),
+    method: 'manual'
   });
   saveState();
   renderSidebarCounts();
-
-  if(openClient){
-    var mailto = 'mailto:'+encodeURIComponent(composeContext.to)+
-      '?subject='+encodeURIComponent(subject)+
-      '&body='+encodeURIComponent(bodyText);
-    window.open(mailto,'_blank');
-    toast('Email opened & logged');
-  } else {
-    toast('Email logged');
-  }
-
+  toast('Logged as sent (no email sent)');
   closeModal('composeModal');
   composeContext = null;
   if(state.view==='detail') renderDetail();
 }
-
-function copyEmailText(){
-  if(!composeContext) return;
-  var subject = document.getElementById('composeSubject').value;
-  var bodyText = document.getElementById('composeBody').value;
-  var full = 'To: '+composeContext.to+'\nSubject: '+subject+'\n\n'+bodyText;
-  if(navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(full).then(function(){
-      toast('Email copied to clipboard');
-    },function(){ fallbackCopy(full); });
-  } else { fallbackCopy(full); }
-}
-function fallbackCopy(text){
-  var ta = document.createElement('textarea');
-  ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
-  document.body.appendChild(ta); ta.select();
-  try{ document.execCommand('copy'); toast('Email copied to clipboard'); }
-  catch(e){ toast('Copy not supported — select manually'); }
-  document.body.removeChild(ta);
-}
-
 /* ============================================================
    MODAL HELPERS
    ============================================================ */
@@ -2297,8 +2671,8 @@ function wireGlobal(){
     else renderCompanies();
   });
   /* compose buttons */
-  document.getElementById('sendEmailBtn').addEventListener('click',function(){ logAndSend(true); });
-  document.getElementById('copyEmailBtn').addEventListener('click', copyEmailText);
+  document.getElementById('sendEmailBtn').addEventListener('click', sendComposedEmail);
+  document.getElementById('logOnlyBtn').addEventListener('click', logWithoutSending);
   /* refresh — pull latest shared data */
   document.getElementById('refreshBtn').addEventListener('click',function(){
     if(syncMode!=='sheet'){

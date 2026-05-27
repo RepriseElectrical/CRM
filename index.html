@@ -686,6 +686,11 @@ input,select,textarea{font-family:var(--sans);}
         Email Log
         <span class="nav-count" id="navCountEmails">0</span>
       </button>
+      <button class="nav-item" data-nav="templates">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v4H4zM4 12h10v8H4zM18 12h2v8h-2z"/></svg>
+        Templates
+        <span class="nav-count" id="navCountTemplates">0</span>
+      </button>
       <button class="nav-item" data-nav="settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         Settings
@@ -733,6 +738,8 @@ input,select,textarea{font-family:var(--sans);}
       <div class="page" id="page-detail"></div>
       <!-- EMAIL LOG PAGE -->
       <div class="page" id="page-emaillog"></div>
+      <!-- TEMPLATES PAGE -->
+      <div class="page" id="page-templates"></div>
       <!-- SETTINGS PAGE -->
       <div class="page" id="page-settings"></div>
     </main>
@@ -776,6 +783,19 @@ input,select,textarea{font-family:var(--sans);}
         Send via Brevo
       </button>
     </div>
+  </div>
+</div>
+
+<div class="modal-veil" id="templateModal">
+  <div class="modal wide">
+    <div class="modal-head">
+      <h2 id="templateModalTitle">New Template</h2>
+      <button class="modal-close" data-close-modal="templateModal">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="templateModalBody"></div>
+    <div class="modal-foot" id="templateModalFoot"></div>
   </div>
 </div>
 
@@ -1198,6 +1218,7 @@ var state = {
   emails: [],
   signatures: JSON.parse(JSON.stringify(DEFAULT_SIGNATURES)),
   templates: JSON.parse(JSON.stringify(DEFAULT_TEMPLATES)),
+  customTemplates: [],   /* user-created HTML templates, stored in own Sheet tab */
   view: 'dashboard',
   filterIndustry: 'all',
   detailId: null,
@@ -1326,6 +1347,43 @@ async function saveToSheet(){
   return true;
 }
 
+/* ---- custom templates: their own tab in the Sheet ---- */
+async function loadTemplatesFromSheet(){
+  if(syncMode!=='sheet' || !syncURL) return;
+  try{
+    var res = await fetch(syncURL,{
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify({action:'loadTemplates'})
+    });
+    var json = await res.json();
+    if(json && json.ok){
+      state.customTemplates = json.templates || [];
+      lsSet('reprise_crm_templates', JSON.stringify(state.customTemplates));
+    }
+  }catch(e){
+    console.error('Template load failed, using local copy:',e);
+    var local = lsGet('reprise_crm_templates');
+    if(local){ try{ state.customTemplates = JSON.parse(local); }catch(e2){} }
+  }
+}
+async function saveTemplatesToSheet(){
+  /* always keep a local backup */
+  lsSet('reprise_crm_templates', JSON.stringify(state.customTemplates));
+  if(syncMode!=='sheet' || !syncURL){
+    toast('Connect to the shared sheet to save templates');
+    return false;
+  }
+  var res = await fetch(syncURL,{
+    method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify({action:'saveTemplates',templates:state.customTemplates})
+  });
+  var json = await res.json();
+  if(!(json && json.ok)) throw new Error(json && json.error ? json.error : 'Save rejected');
+  return true;
+}
+
 /* ---- unified load ---- */
 async function loadState(){
   await loadSyncLink();
@@ -1333,17 +1391,22 @@ async function loadState(){
     try{
       await loadFromSheet();
       syncMode = 'sheet';
+      await loadTemplatesFromSheet();
       return;
     }catch(e){
       console.error('Sheet load failed, using local copy:',e);
       syncMode = 'local';
       await loadLocal();
+      var lt = lsGet('reprise_crm_templates');
+      if(lt){ try{ state.customTemplates = JSON.parse(lt); }catch(e2){} }
       toast('Could not reach the shared sheet — using this device');
       return;
     }
   }
   syncMode = 'local';
   await loadLocal();
+  var lt2 = lsGet('reprise_crm_templates');
+  if(lt2){ try{ state.customTemplates = JSON.parse(lt2); }catch(e3){} }
 }
 
 /* ---- unified save (debounced so rapid edits = one write) ---- */
@@ -1523,6 +1586,7 @@ function go(view, opts){
     companies:['Directory','All Companies'],
     detail:['Company','Profile'],
     emaillog:['Activity','Email Log'],
+    templates:['Tools','Email Templates'],
     settings:['Account','Settings']
   };
   if(view==='companies' && state.filterIndustry!=='all'){
@@ -1537,6 +1601,7 @@ function go(view, opts){
   else if(view==='companies') renderCompanies();
   else if(view==='detail') renderDetail();
   else if(view==='emaillog') renderEmailLog();
+  else if(view==='templates') renderTemplates();
   else if(view==='settings') renderSettings();
 
   document.querySelector('.main').scrollTop = 0;
@@ -1548,6 +1613,8 @@ function go(view, opts){
 function renderSidebarCounts(){
   document.getElementById('navCountAll').textContent = state.companies.length;
   document.getElementById('navCountEmails').textContent = state.emails.length;
+  var tc = document.getElementById('navCountTemplates');
+  if(tc) tc.textContent = state.customTemplates.length;
 
   var wrap = document.getElementById('navIndustries');
   wrap.innerHTML = INDUSTRIES.map(function(ind){
@@ -2121,6 +2188,269 @@ function renderEmailLog(){
 }
 
 /* ============================================================
+   RENDER — TEMPLATES (custom HTML email templates)
+   ============================================================ */
+var TPL_STAGES = [
+  {key:'initial',label:'Initial'},
+  {key:'followup',label:'Follow-up'},
+  {key:'closing',label:'Closing'},
+  {key:'other',label:'Other / Any'}
+];
+var TPL_PLACEHOLDERS = [
+  ['{{contact_name}}','The contact\u2019s first name'],
+  ['{{company_name}}','The company name'],
+  ['{{sender_name}}','Your name (whoever is logged in)'],
+  ['{{sender_title}}','Your title'],
+  ['{{sender_email}}','Your email address'],
+  ['{{sender_phone}}','Your phone number'],
+  ['{{industry}}','The company\u2019s industry']
+];
+
+function renderTemplates(){
+  var page = document.getElementById('page-templates');
+  var list = state.customTemplates.slice().sort(function(a,b){
+    return (b.updatedAt||0)-(a.updatedAt||0);
+  });
+
+  var rowsHTML;
+  if(!list.length){
+    rowsHTML = emptyState(
+      'No custom templates yet',
+      'Create your own HTML email templates here. They are tagged by stage and industry, '+
+      'so the right ones surface automatically when you send.',
+      'New Template','newTemplate');
+  } else {
+    rowsHTML = '<div class="company-grid">'+list.map(function(t){
+      var stage = TPL_STAGES.filter(function(s){return s.key===t.stage;})[0];
+      return '<div class="company-card" data-edit-tpl="'+esc(t.id)+'">'+
+        '<div class="cc-top">'+
+          '<div class="cc-name">'+esc(t.name)+'</div>'+
+          '<div class="cc-industry">'+esc(stage?stage.label:'Any')+'</div>'+
+        '</div>'+
+        '<div class="cc-detail">'+
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/></svg>'+
+          esc(t.industry==='any'?'All industries':t.industry)+'</div>'+
+        '<div class="cc-detail">'+
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>'+
+          'Subject: '+esc((t.subject||'').slice(0,40)||'—')+'</div>'+
+        '<div class="cc-foot">'+
+          '<div class="cc-status">'+
+            '<div class="status-dot" style="background:var(--brass)"></div>'+
+            '<span class="stage-tag" style="color:var(--brass-dk)">Custom template</span>'+
+          '</div>'+
+          '<div class="cc-contacts">edit</div>'+
+        '</div>'+
+      '</div>';
+    }).join('')+'</div>';
+  }
+
+  page.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:22px;flex-wrap:wrap;">'+
+      '<div style="max-width:520px;">'+
+        '<p style="font-size:13px;color:var(--text-mut);line-height:1.6;">'+
+          'Your own HTML email templates. Each is tagged by stage and industry — when you '+
+          'click an email button on a company, matching templates surface first, and you '+
+          'pick which to send. The 18 built-in approved templates remain available too.</p>'+
+      '</div>'+
+      '<button class="btn btn-primary" id="newTemplateBtn">'+
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>'+
+        'New Template</button>'+
+    '</div>'+
+    (syncMode!=='sheet'
+      ? '<div class="compose-hint" style="margin-bottom:20px;">'+
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>'+
+        '<div>Not connected to the shared sheet — templates you create now save on this '+
+        'device only and will not reach Adrian until you connect (Settings).</div></div>'
+      : '')+
+    rowsHTML;
+
+  var nb = page.querySelector('#newTemplateBtn');
+  if(nb) nb.addEventListener('click',function(){ openTemplateEditor(null); });
+  var ea = page.querySelector('[data-empty-action]');
+  if(ea) ea.addEventListener('click',function(){ openTemplateEditor(null); });
+  page.querySelectorAll('[data-edit-tpl]').forEach(function(card){
+    card.addEventListener('click',function(){
+      openTemplateEditor(card.getAttribute('data-edit-tpl'));
+    });
+  });
+}
+
+/* ---- template editor modal ---- */
+var editingTemplateId = null;
+
+function customTemplateById(id){
+  for(var i=0;i<state.customTemplates.length;i++)
+    if(state.customTemplates[i].id===id) return state.customTemplates[i];
+  return null;
+}
+
+function openTemplateEditor(id){
+  editingTemplateId = id;
+  var t = id ? customTemplateById(id) : null;
+
+  document.getElementById('templateModalTitle').textContent =
+    t ? 'Edit Template' : 'New Template';
+
+  var placeholderHTML = TPL_PLACEHOLDERS.map(function(p){
+    return '<div style="display:flex;gap:9px;align-items:baseline;margin-bottom:5px;">'+
+      '<code style="font-family:var(--mono);font-size:11px;background:var(--ink);'+
+      'color:var(--brass-lt);padding:3px 7px;border-radius:3px;white-space:nowrap;">'+
+      esc(p[0])+'</code>'+
+      '<span style="font-size:11px;color:var(--text-mut);">'+esc(p[1])+'</span>'+
+    '</div>';
+  }).join('');
+
+  document.getElementById('templateModalBody').innerHTML =
+    '<div class="form-grid">'+
+      '<div class="form-field">'+
+        '<label>Template Name *</label>'+
+        '<input type="text" id="tplName" value="'+esc(t?t.name:'')+'" placeholder="e.g. Hotel — Spring Campaign">'+
+      '</div>'+
+      '<div class="form-field">'+
+        '<label>Stage</label>'+
+        '<select id="tplStage">'+
+          TPL_STAGES.map(function(s){
+            return '<option value="'+s.key+'"'+(t&&t.stage===s.key?' selected':'')+'>'+s.label+'</option>';
+          }).join('')+
+        '</select>'+
+      '</div>'+
+      '<div class="form-field">'+
+        '<label>Industry</label>'+
+        '<select id="tplIndustry">'+
+          '<option value="any"'+(t&&t.industry==='any'?' selected':'')+'>All industries</option>'+
+          INDUSTRIES.map(function(ind){
+            return '<option value="'+esc(ind)+'"'+(t&&t.industry===ind?' selected':'')+'>'+esc(ind)+'</option>';
+          }).join('')+
+        '</select>'+
+      '</div>'+
+      '<div class="form-field">'+
+        '<label>Subject Line *</label>'+
+        '<input type="text" id="tplSubject" value="'+esc(t?t.subject||'':'')+'" placeholder="Can use {{company_name}} etc.">'+
+      '</div>'+
+      '<div class="form-field full">'+
+        '<label>HTML Email Code *</label>'+
+        '<textarea id="tplHtml" style="min-height:200px;font-family:var(--mono);font-size:11px;" '+
+          'placeholder="Paste your full HTML email here. Use the placeholder tags so the CRM can personalise it.">'+
+          esc(t?t.html||'':'')+'</textarea>'+
+      '</div>'+
+      '<div class="full" style="background:var(--paper-2);border:1px solid var(--line);'+
+        'border-radius:3px;padding:14px;">'+
+        '<div class="field-label" style="margin-bottom:9px;">Placeholder tags — put these in your HTML where you want the value</div>'+
+        placeholderHTML+
+      '</div>'+
+      '<div class="full">'+
+        '<button class="btn btn-ghost btn-sm" id="tplPreviewBtn">'+
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'+
+          'Preview with sample data</button>'+
+      '</div>'+
+      '<div class="full" id="tplPreviewWrap" style="display:none;">'+
+        '<div class="field-label" style="margin-bottom:6px;">Preview</div>'+
+        '<div id="tplPreview" style="border:1px solid var(--line);border-radius:3px;'+
+          'background:#faf8f4;height:300px;overflow-y:auto;"></div>'+
+      '</div>'+
+    '</div>';
+
+  /* footer buttons depend on new vs edit */
+  document.getElementById('templateModalFoot').innerHTML =
+    (id?'<button class="btn btn-ghost" id="deleteTemplateBtn" style="margin-right:auto;">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>'+
+      'Delete</button>':'')+
+    '<button class="btn btn-ghost" data-close-modal="templateModal">Cancel</button>'+
+    '<button class="btn btn-primary" id="saveTemplateBtn">Save Template</button>';
+
+  document.getElementById('tplPreviewBtn').addEventListener('click', previewTemplate);
+  document.getElementById('saveTemplateBtn').addEventListener('click', saveTemplate);
+  var del = document.getElementById('deleteTemplateBtn');
+  if(del) del.addEventListener('click', deleteTemplate);
+
+  openModal('templateModal');
+}
+
+function previewTemplate(){
+  var html = document.getElementById('tplHtml').value;
+  if(!html.trim()){ toast('Paste some HTML first'); return; }
+  var filled = fillCustomTemplate(html, {
+    contact_name:'Sarah', company_name:'The Sample Hotel',
+    sender_name:EmailEngine.SENDERS[state.currentUser].name,
+    sender_title:EmailEngine.SENDERS[state.currentUser].title,
+    sender_email:EmailEngine.SENDERS[state.currentUser].email,
+    sender_phone:EmailEngine.SENDERS[state.currentUser].phoneDisplay,
+    industry:'Hotel'
+  });
+  var wrap = document.getElementById('tplPreviewWrap');
+  wrap.style.display = 'block';
+  var prev = document.getElementById('tplPreview');
+  prev.innerHTML = '<iframe style="width:100%;height:100%;border:0;" sandbox="allow-same-origin"></iframe>';
+  var ifr = prev.querySelector('iframe');
+  var doc = ifr.contentDocument || ifr.contentWindow.document;
+  doc.open(); doc.write(filled); doc.close();
+}
+
+/* swap {{tag}} placeholders for real values */
+function fillCustomTemplate(str, vals){
+  var out = String(str);
+  for(var k in vals){
+    out = out.split('{{'+k+'}}').join(esc(vals[k]));
+  }
+  return out;
+}
+
+function saveTemplate(){
+  var name = document.getElementById('tplName').value.trim();
+  var subject = document.getElementById('tplSubject').value.trim();
+  var html = document.getElementById('tplHtml').value;
+  if(!name){ toast('Template name is required'); return; }
+  if(!subject){ toast('Subject line is required'); return; }
+  if(!html.trim()){ toast('HTML email code is required'); return; }
+
+  var data = {
+    name: name,
+    stage: document.getElementById('tplStage').value,
+    industry: document.getElementById('tplIndustry').value,
+    subject: subject,
+    html: html,
+    updatedAt: Date.now()
+  };
+
+  if(editingTemplateId){
+    var t = customTemplateById(editingTemplateId);
+    if(t){ for(var k in data) t[k]=data[k]; }
+    toast('Template updated');
+  } else {
+    data.id = uid();
+    data.createdAt = Date.now();
+    state.customTemplates.push(data);
+    toast('Template created');
+  }
+
+  saveTemplatesToSheet().then(function(){
+    setSyncBadge(syncMode==='sheet'?'synced':'local');
+  },function(e){
+    console.error('Template save failed',e);
+    toast('Saved on this device — sheet sync failed, will need retry');
+  });
+
+  closeModal('templateModal');
+  renderSidebarCounts();
+  renderTemplates();
+}
+
+function deleteTemplate(){
+  if(!editingTemplateId) return;
+  var t = customTemplateById(editingTemplateId);
+  if(!t) return;
+  if(!confirm('Delete the template "'+t.name+'"? This cannot be undone.')) return;
+  state.customTemplates = state.customTemplates.filter(function(x){
+    return x.id!==editingTemplateId;
+  });
+  saveTemplatesToSheet().then(function(){},function(){});
+  closeModal('templateModal');
+  renderSidebarCounts();
+  renderTemplates();
+  toast('Template deleted');
+}
+
+/* ============================================================
    RENDER — SETTINGS
    ============================================================ */
 function renderSettings(){
@@ -2183,21 +2513,18 @@ function renderSettings(){
 
     '<div class="panel settings-card">'+
       '<div class="panel-head"><div class="panel-title">Email Templates</div>'+
-        '<div class="panel-tag">18 Approved</div></div>'+
+        '<div class="panel-tag">Custom</div></div>'+
       '<p style="font-size:12px;color:var(--text-mut);margin-bottom:14px;line-height:1.6;">'+
-        'Each email button uses a pre-approved, professionally designed template. '+
-        'The right one is chosen automatically from the company\u2019s industry and the '+
-        'contact\u2019s name is filled in for you. There are six industry versions of each:</p>'+
-      '<div style="display:flex;flex-direction:column;gap:10px;">'+
-        templateRow('Initial Email','Sent as the first cold approach. Six industry versions.')+
-        templateRow('Follow-up Email','Sent '+FOLLOWUP_DAYS+' days after the initial, if no reply. Six versions.')+
-        templateRow('Closing Email','A graceful final note. Six versions.')+
-      '</div>'+
+        'Emails are sent using your own custom templates, created and managed in the '+
+        'Templates section. They are tagged by stage and industry, so the right one '+
+        'surfaces automatically when you send.</p>'+
+      '<button class="btn btn-ghost btn-sm" id="goToTemplatesBtn">'+
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v4H4zM4 12h10v8H4zM18 12h2v8h-2z"/></svg>'+
+        'Open Templates</button>'+
       '<div class="compose-hint" style="margin-top:14px;">'+
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>'+
-        '<div>You preview the exact email before sending. To change the wording of a '+
-        'template, it must be updated in the email engine — these are fixed in the app '+
-        'so outreach stays consistent and approved.</div>'+
+        '<div>A set of standard fallback templates exists behind the scenes — used '+
+        'only if no custom template is available, so an email can always be sent.</div>'+
       '</div>'+
     '</div>';
 
@@ -2207,6 +2534,8 @@ function renderSettings(){
     syncMsg.textContent = text;
     syncMsg.style.color = color||'var(--text-mut)';
   }
+  var goTpl = document.getElementById('goToTemplatesBtn');
+  if(goTpl) goTpl.addEventListener('click',function(){ go('templates'); });
   document.getElementById('connectSyncBtn').addEventListener('click',function(){
     var url = document.getElementById('syncInput').value.trim();
     if(!url){ setMsg('Paste your connection link first.','var(--rust)'); return; }
@@ -2450,7 +2779,7 @@ function openComposeModal(companyId, type){
   composeContext = {
     companyId: companyId, type: type, industry: industry,
     to: primary.email, contactName: primary.name,
-    contactIndex: 0
+    contactIndex: 0, templateChoice: 'builtin'
   };
 
   var typeLabels = {initial:'Initial Email',followup:'Follow-up Email',closing:'Closing Email'};
@@ -2476,28 +2805,74 @@ function openComposeModal(companyId, type){
 
   var senderInfo = EmailEngine.SENDERS[u] || EmailEngine.SENDERS.chris;
 
+  /* ---- template picker: custom templates only ----
+     The 18 built-in templates remain in the code as a silent safety
+     net — used automatically only if no custom template is available,
+     so the CRM can never end up with nothing to send. */
+  var customMatches = matchingCustomTemplates(type, industry);
+  var otherCustom = state.customTemplates.filter(function(t){
+    return customMatches.indexOf(t)<0;
+  });
+  var hasAnyCustom = state.customTemplates.length > 0;
+
+  var tplOptions = '';
+  if(customMatches.length){
+    tplOptions += '<optgroup label="Matching this company">'+
+      customMatches.map(function(t){
+        return '<option value="custom:'+esc(t.id)+'">'+esc(t.name)+'</option>';
+      }).join('')+'</optgroup>';
+  }
+  if(otherCustom.length){
+    tplOptions += '<optgroup label="Your other templates">'+
+      otherCustom.map(function(t){
+        return '<option value="custom:'+esc(t.id)+'">'+esc(t.name)+
+          ' ('+esc(t.industry==='any'?'Any':t.industry)+')</option>';
+      }).join('')+'</optgroup>';
+  }
+  if(!hasAnyCustom){
+    /* no custom templates exist yet — fall back silently to built-in */
+    tplOptions = '<option value="builtin">Standard '+esc(industry)+' template</option>';
+    composeContext.templateChoice = 'builtin';
+  } else if(customMatches.length){
+    composeContext.templateChoice = 'custom:'+customMatches[0].id;
+  } else {
+    composeContext.templateChoice = 'custom:'+otherCustom[0].id;
+  }
+
+  var templateField = !hasAnyCustom
+    ? '<div class="form-field" style="margin-bottom:14px;">'+
+        '<label>Template</label>'+
+        '<select id="composeTemplate" class="compose-subject-input" disabled>'+tplOptions+'</select>'+
+        '<div style="font-size:11px;color:var(--text-mut);margin-top:5px;">'+
+        'No custom templates yet — using the standard template. Create your own in the '+
+        'Templates section.</div>'+
+      '</div>'
+    : '<div class="form-field" style="margin-bottom:14px;">'+
+        '<label>Template</label>'+
+        '<select id="composeTemplate" class="compose-subject-input">'+tplOptions+'</select>'+
+      '</div>';
+
   document.getElementById('composeModalBody').innerHTML =
     '<div class="compose-meta">'+
       contactPicker+
       '<div class="compose-row"><div class="cr-label">From</div>'+
         '<div class="cr-value">'+esc(senderInfo.name)+' — '+esc(senderInfo.email)+'</div></div>'+
-      '<div class="compose-row"><div class="cr-label">Industry</div>'+
-        '<div class="cr-value">'+esc(industry)+' template (chosen automatically)</div></div>'+
     '</div>'+
+    templateField+
     '<div class="form-field" style="margin-bottom:14px;">'+
       '<label>Subject</label>'+
       '<input type="text" id="composeSubject" class="compose-subject-input">'+
     '</div>'+
     '<div class="form-field">'+
-      '<label>Email preview — this designed email will be sent</label>'+
+      '<label>Email preview — this is what will be sent</label>'+
       '<div id="composePreview" style="border:1px solid var(--line);border-radius:3px;'+
-        'background:#faf8f4;height:340px;overflow-y:auto;"></div>'+
+        'background:#faf8f4;height:320px;overflow-y:auto;"></div>'+
     '</div>'+
     '<div class="compose-hint">'+
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>'+
-      '<div>This sends the designed HTML email through Brevo, from your address. '+
-      'It logs the email and '+(type==='initial'?'starts the '+FOLLOWUP_DAYS+'-day follow-up reminder.':'updates this company\'s stage.')+
-      ' The body follows the approved '+esc(industry)+' template and is not edited here — only the subject can be changed.</div>'+
+      '<div>Sends the designed HTML email through Brevo, from your address, and logs it'+
+      (type==='initial'?' — and starts the '+FOLLOWUP_DAYS+'-day follow-up reminder.':'.')+
+      ' '+(customMatches.length?'Templates matching this company are listed first.':'')+'</div>'+
     '</div>';
 
   renderComposePreview();
@@ -2513,36 +2888,85 @@ function openComposeModal(companyId, type){
       renderComposePreview();
     });
   }
+  document.getElementById('composeTemplate').addEventListener('change',function(){
+    composeContext.templateChoice = this.value;
+    /* reset subject so the new template's subject loads */
+    var s = document.getElementById('composeSubject'); if(s) s.value='';
+    renderComposePreview();
+  });
 
   openModal('composeModal');
 }
 
-/* builds the email from the engine and shows it in the preview */
+/* custom templates that match this stage + industry, best first */
+function matchingCustomTemplates(stage, industry){
+  return state.customTemplates.filter(function(t){
+    var stageOk = (t.stage===stage) || (t.stage==='other');
+    var indOk = (t.industry===industry) || (t.industry==='any');
+    return stageOk && indOk;
+  }).sort(function(a,b){
+    /* exact industry + exact stage ranks highest */
+    function score(t){
+      var s=0;
+      if(t.industry===industry) s+=2;
+      if(t.stage===stage) s+=1;
+      return s;
+    }
+    return score(b)-score(a);
+  });
+}
+
+/* builds the email (built-in OR custom) and shows it in the preview */
 function renderComposePreview(){
   if(!composeContext) return;
   var u = state.currentUser;
-  var built = EmailEngine.buildEmail(
-    composeContext.industry, composeContext.type,
-    { sender:u, contactName:composeContext.contactName,
-      companyName: (companyById(composeContext.companyId)||{}).name }
-  );
-  composeContext.builtHtml = built.html;
-  composeContext.fromEmail = built.fromEmail;
-  composeContext.fromName  = built.fromName;
-  composeContext.replyTo   = built.replyTo;
+  var company = (companyById(composeContext.companyId)||{});
+  var choice = composeContext.templateChoice || 'builtin';
+
+  var html, subject;
+  if(choice.indexOf('custom:')===0){
+    var t = customTemplateById(choice.slice(7));
+    if(t){
+      var s = EmailEngine.SENDERS[u];
+      var vals = {
+        contact_name: String(composeContext.contactName||'').trim().split(/\s+/)[0]||'there',
+        company_name: company.name||'',
+        sender_name: s.name, sender_title: s.title,
+        sender_email: s.email, sender_phone: s.phoneDisplay,
+        industry: composeContext.industry
+      };
+      html = fillCustomTemplate(t.html, vals);
+      subject = fillCustomTemplate(t.subject, vals);
+      composeContext.fromEmail = s.email;
+      composeContext.fromName  = 'Reprise Electrical';
+      composeContext.replyTo   = s.email;
+    }
+  }
+  if(!html){
+    /* built-in */
+    var built = EmailEngine.buildEmail(
+      composeContext.industry, composeContext.type,
+      { sender:u, contactName:composeContext.contactName, companyName:company.name }
+    );
+    html = built.html; subject = built.subject;
+    composeContext.fromEmail = built.fromEmail;
+    composeContext.fromName  = built.fromName;
+    composeContext.replyTo   = built.replyTo;
+  }
+
+  composeContext.builtHtml = html;
+  composeContext.defaultSubject = subject;
 
   var subjEl = document.getElementById('composeSubject');
-  if(subjEl && !subjEl.value) subjEl.value = built.subject;
-  composeContext.defaultSubject = built.subject;
+  if(subjEl && !subjEl.value) subjEl.value = subject;
 
   var prev = document.getElementById('composePreview');
   if(prev){
-    /* render inside an iframe so email styles don't leak into the app */
     prev.innerHTML = '<iframe style="width:100%;height:100%;border:0;" '+
       'sandbox="allow-same-origin"></iframe>';
     var ifr = prev.querySelector('iframe');
     var doc = ifr.contentDocument || ifr.contentWindow.document;
-    doc.open(); doc.write(built.html); doc.close();
+    doc.open(); doc.write(html); doc.close();
   }
 }
 

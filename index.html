@@ -1658,6 +1658,15 @@ function renderDashboard(){
   var reminders = allReminders();
   var dueNow = reminders.filter(function(r){return r.overdue;}).length;
 
+  /* response rate: companies that replied vs companies emailed */
+  var emailedCompanyIds = {};
+  state.emails.forEach(function(e){ emailedCompanyIds[e.companyId]=true; });
+  var emailedCompanies = Object.keys(emailedCompanyIds).length;
+  var replied = state.companies.filter(function(c){
+    return c.responseStatus && c.responseStatus!=='awaiting' && c.responseStatus!=='noresponse';
+  }).length;
+  var responseRate = emailedCompanies? Math.round(replied/emailedCompanies*100) : 0;
+
   /* monthly email chart — last 6 months */
   var months = [];
   var now = new Date();
@@ -1755,7 +1764,7 @@ function renderDashboard(){
         '<div class="stat-meta">'+pending+' still in progress</div></div>'+
       '<div class="stat-card amber"><div class="stat-k">Emails Sent</div>'+
         '<div class="stat-v">'+totalEmails+'</div>'+
-        '<div class="stat-meta">across all stages</div></div>'+
+        '<div class="stat-meta">'+responseRate+'% response rate · '+replied+'/'+emailedCompanies+' replied</div></div>'+
       '<div class="stat-card green"><div class="stat-k">Win Rate</div>'+
         '<div class="stat-v">'+winRate+'%</div>'+
         '<div class="stat-meta">'+won+' won · '+lost+' lost</div></div>'+
@@ -1907,9 +1916,12 @@ function companyCardHTML(c){
   var st = STAGES[stage];
   var contacts = c.contacts||[];
   var primary = contacts[0];
-  return '<div class="company-card" data-company="'+c.id+'">'+
+  return '<div class="company-card" data-company="'+c.id+'"'+
+    (c.doNotContact?' style="opacity:0.7;"':'')+'>'+
     '<div class="cc-top">'+
-      '<div class="cc-name">'+esc(c.name)+'</div>'+
+      '<div class="cc-name">'+esc(c.name)+
+        (c.doNotContact?' <span style="font-family:var(--mono);font-size:8px;letter-spacing:0.1em;background:var(--rust);color:var(--paper);padding:2px 6px;border-radius:3px;vertical-align:middle;margin-left:6px;">DNC</span>':'')+
+      '</div>'+
       '<div class="cc-industry">'+esc(c.industry||'—')+'</div>'+
     '</div>'+
     (c.address?'<div class="cc-detail">'+
@@ -2076,12 +2088,47 @@ function renderDetail(){
         '<div class="panel" style="margin-bottom:16px;">'+
           '<div class="panel-head"><div class="panel-title">Outreach</div>'+
             '<div class="panel-tag">Signed in as '+esc(USERS[state.currentUser].name)+'</div></div>'+
+          (c.doNotContact
+            ? '<div class="reminder due" style="margin-bottom:14px;">'+
+              '<div class="rem-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M4.9 4.9l14.2 14.2"/></svg></div>'+
+              '<div class="rem-body"><div class="rem-title">Do Not Contact</div>'+
+              '<div class="rem-meta">This company has unsubscribed or asked not to be contacted. Email sending is disabled.</div></div>'+
+              '</div>'
+            : '')+
           '<div class="email-actions">'+
-            emailBtnHTML('initial','1','Initial Email',sent.initial,false)+
-            emailBtnHTML('followup','2','Follow-up Email',sent.followup,!sent.initial)+
-            emailBtnHTML('closing','3','Closing Email',sent.closing,!sent.initial)+
+            emailBtnHTML('initial','1','Initial Email',sent.initial,!!c.doNotContact)+
+            emailBtnHTML('followup','2','Follow-up Email',sent.followup,!sent.initial||!!c.doNotContact)+
+            emailBtnHTML('closing','3','Closing Email',sent.closing,!sent.initial||!!c.doNotContact)+
           '</div>'+
           outcomeHTML+
+        '</div>'+
+        '<div class="panel" style="margin-bottom:16px;">'+
+          '<div class="panel-head"><div class="panel-title">Response &amp; Status</div></div>'+
+          responseStatusHTML(c)+
+          '<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line);">'+
+            '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">'+
+              '<div class="field-label" style="margin:0;">Email engagement</div>'+
+              (sent.initial?'<button class="btn btn-ghost btn-sm" id="checkOpensBtn">'+
+                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'+
+                'Check opens</button>':'')+
+            '</div>'+
+            '<div id="engagementResult" style="font-size:12px;color:var(--text-mut);margin-top:9px;">'+
+              (c.engagement
+                ? engagementText(c.engagement)
+                : (sent.initial?'Click "Check opens" to see if emails were opened or clicked (via Brevo).'
+                              :'Send an email first to track engagement.'))+
+            '</div>'+
+            '<div style="font-size:10px;color:var(--text-faint);margin-top:6px;font-style:italic;">'+
+              'Note: open tracking is approximate — many email apps block it, so "not opened" may just mean it could not be measured.</div>'+
+          '</div>'+
+          '<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line);">'+
+            '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;color:var(--text);">'+
+              '<input type="checkbox" id="dncCheckbox" '+(c.doNotContact?'checked':'')+' style="width:16px;height:16px;cursor:pointer;">'+
+              'Do Not Contact (unsubscribed / opted out)'+
+            '</label>'+
+            '<div style="font-size:11px;color:var(--text-mut);margin-top:6px;padding-left:26px;">'+
+              'Tick this when a venue unsubscribes or asks not to be contacted. It disables all email sending for this company.</div>'+
+          '</div>'+
         '</div>'+
         '<div class="panel">'+
           '<div class="panel-head"><div class="panel-title">Activity Timeline</div></div>'+
@@ -2120,6 +2167,99 @@ function renderDetail(){
       toast(o==='clear'?'Outcome reset':'Marked as '+o);
     });
   });
+  page.querySelectorAll('[data-response]').forEach(function(btn){
+    btn.addEventListener('click',function(){
+      var r = btn.getAttribute('data-response');
+      c.responseStatus = (c.responseStatus===r)?null:r;
+      c.responseAt = c.responseStatus?Date.now():null;
+      saveState(); renderDetail();
+      toast(c.responseStatus?'Response logged':'Response cleared');
+    });
+  });
+  var dnc = document.getElementById('dncCheckbox');
+  if(dnc){
+    dnc.addEventListener('change',function(){
+      c.doNotContact = dnc.checked;
+      if(dnc.checked) c.doNotContactAt = Date.now();
+      saveState(); renderDetail();
+      toast(dnc.checked?'Marked Do Not Contact':'Do Not Contact removed');
+    });
+  }
+  var chk = document.getElementById('checkOpensBtn');
+  if(chk){
+    chk.addEventListener('click',function(){
+      checkEngagement(c);
+    });
+  }
+}
+
+function engagementText(eng){
+  if(!eng) return '';
+  var bits = [];
+  if(eng.opened) bits.push('<span style="color:var(--green);">✓ Opened</span>');
+  else bits.push('<span style="color:var(--text-faint);">Not recorded as opened</span>');
+  if(eng.clicked) bits.push('<span style="color:var(--green);">✓ Clicked a link</span>');
+  return bits.join(' · ')+
+    (eng.checkedAt?' <span style="color:var(--text-faint);">(checked '+fmtDate(eng.checkedAt)+')</span>':'');
+}
+
+function checkEngagement(c){
+  var contacts = c.contacts||[];
+  var primary = contacts[0];
+  if(!primary || !primary.email){ toast('No contact email to check'); return; }
+  if(syncMode!=='sheet' || !syncURL){
+    toast('Connect to the shared sheet to check engagement');
+    return;
+  }
+  var resEl = document.getElementById('engagementResult');
+  if(resEl) resEl.innerHTML = 'Checking with Brevo…';
+  var btn = document.getElementById('checkOpensBtn');
+  if(btn){ btn.disabled = true; }
+
+  fetch(syncURL,{
+    method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify({action:'getEmailEvents', email:primary.email})
+  }).then(function(r){ return r.json(); }).then(function(json){
+    if(json && json.ok){
+      c.engagement = { opened:json.opened, clicked:json.clicked, checkedAt:Date.now() };
+      saveState();
+      if(resEl) resEl.innerHTML = engagementText(c.engagement);
+      toast('Engagement checked');
+    } else {
+      if(resEl) resEl.innerHTML = 'Could not check — '+esc(json&&json.error?json.error:'unknown error');
+    }
+    if(btn) btn.disabled = false;
+  }).catch(function(e){
+    console.error(e);
+    if(resEl) resEl.innerHTML = 'Check failed — connection issue.';
+    if(btn) btn.disabled = false;
+  });
+}
+
+/* response status control */
+var RESPONSE_OPTS = [
+  {key:'interested', label:'Replied — Interested', color:'var(--green)'},
+  {key:'notnow',     label:'Replied — Not now',    color:'var(--amber)'},
+  {key:'notinterested', label:'Replied — Not interested', color:'var(--rust)'},
+  {key:'noresponse', label:'No response',          color:'var(--text-faint)'}
+];
+function responseStatusHTML(c){
+  var cur = c.responseStatus||null;
+  var awaitingNote = (cur==='awaiting')
+    ? '<div style="font-size:12px;color:var(--amber);margin-bottom:10px;">Awaiting reply — mark below once they respond.</div>'
+    : '';
+  var buttons = RESPONSE_OPTS.map(function(o){
+    var active = cur===o.key;
+    return '<button class="btn '+(active?'btn-primary':'btn-ghost')+' btn-sm" '+
+      'data-response="'+o.key+'" style="justify-content:flex-start;gap:8px;">'+
+      '<span style="width:9px;height:9px;border-radius:50%;background:'+o.color+';flex-shrink:0;"></span>'+
+      (active?'✓ ':'')+o.label+'</button>';
+  }).join('');
+  var meta = (cur && cur!=='awaiting' && c.responseAt)
+    ? '<div style="font-size:11px;color:var(--text-mut);margin-top:9px;">Logged '+fmtDate(c.responseAt)+'</div>'
+    : '<div style="font-size:11px;color:var(--text-mut);margin-top:9px;">Mark how this venue responded — feeds your response rate on the dashboard.</div>';
+  return awaitingNote+'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'+buttons+'</div>'+meta;
 }
 
 function emailBtnHTML(type,num,label,sent,disabled){
@@ -2659,6 +2799,12 @@ function openCompanyModal(id){
         '<label>Notes</label>'+
         '<textarea id="f-notes" placeholder="Anything useful — best time to call, prior jobs, who referred them…">'+esc(c?c.notes||'':'')+'</textarea>'+
       '</div>'+
+      '<div class="form-field full">'+
+        '<label style="display:flex;align-items:center;gap:9px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text);">'+
+          '<input type="checkbox" id="f-dnc" '+(c&&c.doNotContact?'checked':'')+' style="width:16px;height:16px;cursor:pointer;">'+
+          '<span><strong>Do Not Contact</strong> — block email sending to this company (e.g. after they unsubscribe or ask not to be contacted)</span>'+
+        '</label>'+
+      '</div>'+
       '<div class="form-divider"><span>Contacts</span><div class="fd-line"></div></div>'+
     '</div>'+
     '<div id="contactsWrap" style="margin-top:14px;"></div>'+
@@ -2736,6 +2882,7 @@ function saveCompany(){
     website: document.getElementById('f-website').value.trim(),
     address: document.getElementById('f-address').value.trim(),
     notes: document.getElementById('f-notes').value.trim(),
+    doNotContact: document.getElementById('f-dnc').checked,
     contacts: contacts
   };
 
@@ -2766,6 +2913,10 @@ var composeContext = null;
 function openComposeModal(companyId, type){
   var c = companyById(companyId);
   if(!c){ return; }
+  if(c.doNotContact){
+    toast('This company is marked Do Not Contact — sending is disabled');
+    return;
+  }
   var contacts = c.contacts||[];
   var primary = contacts[0];
   if(!primary || !primary.email){
@@ -3016,8 +3167,12 @@ function sendComposedEmail(){
         subject: subject,
         sentBy: state.currentUser,
         sentAt: Date.now(),
-        method: 'brevo'
+        method: 'brevo',
+        messageId: (json.messageId||'')
       });
+      /* default the company to "awaiting reply" if no response logged yet */
+      var co = companyById(composeContext.companyId);
+      if(co && !co.responseStatus) co.responseStatus = 'awaiting';
       saveState();
       renderSidebarCounts();
       toast('Email sent & logged');

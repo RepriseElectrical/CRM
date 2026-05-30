@@ -812,7 +812,13 @@ input,select,textarea{font-family:var(--sans);}
 'use strict';
 
 /* ---------- CONSTANTS ---------- */
-var INDUSTRIES = ['Hotel','Restaurant','Pub','Club','Retail','Office'];
+var INDUSTRIES = ['Hotel','Restaurant','Pub','Retail','Office','Strata Management','Hospitality Management','Shopping Centre Management'];
+/* Categories visually grouped in the sidebar — "Direct venues" first, then "Management companies".
+   The first five are the venues themselves; the last three are companies that manage multiple sites. */
+var INDUSTRY_GROUPS = [
+  { label:'Direct venues',        items:['Hotel','Restaurant','Pub','Retail','Office'] },
+  { label:'Management companies', items:['Strata Management','Hospitality Management','Shopping Centre Management'] }
+];
 var STAGES = {
   'new':       {label:'New Lead',     color:'var(--text-faint)'},
   'initial':   {label:'Initial Sent', color:'var(--brass)'},
@@ -1591,7 +1597,7 @@ function go(view, opts){
   };
   if(view==='companies' && state.filterIndustry!=='all'){
     document.getElementById('tbKicker').textContent = 'Industry';
-    document.getElementById('tbTitle').textContent = state.filterIndustry+'s';
+    document.getElementById('tbTitle').textContent = industryPlural(state.filterIndustry);
   } else {
     document.getElementById('tbKicker').textContent = titles[view][0];
     document.getElementById('tbTitle').textContent = titles[view][1];
@@ -1617,31 +1623,48 @@ function renderSidebarCounts(){
   if(tc) tc.textContent = state.customTemplates.length;
 
   var wrap = document.getElementById('navIndustries');
-  wrap.innerHTML = INDUSTRIES.map(function(ind){
-    var count = state.companies.filter(function(c){return c.industry===ind;}).length;
-    return '<button class="nav-item" data-nav-industry="'+esc(ind)+'">'+
-      industryIcon(ind)+
-      esc(ind)+'s'+
-      '<span class="nav-count">'+count+'</span>'+
-    '</button>';
+  /* render the two industry groups with small headings between them */
+  wrap.innerHTML = INDUSTRY_GROUPS.map(function(group, idx){
+    var heading = '<div class="sb-section"'+
+      (idx>0?' style="margin-top:14px;"':'')+'>'+esc(group.label)+'</div>';
+    var items = group.items.map(function(ind){
+      var count = state.companies.filter(function(c){return c.industry===ind;}).length;
+      return '<button class="nav-item" data-nav-industry="'+esc(ind)+'">'+
+        industryIcon(ind)+
+        esc(industryPlural(ind))+
+        '<span class="nav-count">'+count+'</span>'+
+      '</button>';
+    }).join('');
+    return heading + items;
   }).join('');
+
   wrap.querySelectorAll('[data-nav-industry]').forEach(function(btn){
     btn.addEventListener('click', function(){
       go('companies',{industry:btn.getAttribute('data-nav-industry')});
     });
   });
 }
+
+/* Pluralisation for the sidebar — "Hotels" reads naturally, but
+   "Strata Managements" doesn't, so management categories aren't pluralised. */
+function industryPlural(ind){
+  if(ind.indexOf('Management')>=0) return ind;
+  return ind + 's';
+}
+
 function industryIcon(ind){
   var icons = {
     Hotel:'<path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h.01M15 9h.01M9 13h.01M15 13h.01M10 21v-4h4v4"/>',
     Restaurant:'<path d="M3 2v7a3 3 0 0 0 6 0V2M6 9v13M18 2c-2 0-3 2-3 5s1 5 3 5M18 12v10"/>',
     Pub:'<path d="M6 3h12l-1 9a5 5 0 0 1-10 0L6 3zM9 21h6M12 17v4"/>',
-    Club:'<path d="M12 3v18M5 8l7-5 7 5M5 8v8l7 5 7-5V8"/>',
     Retail:'<path d="M3 9l1.5-5h15L21 9M3 9v11h18V9M3 9h18M9 13h6"/>',
-    Office:'<path d="M3 21V5l9-3 9 3v16M9 9h.01M9 13h.01M9 17h.01M15 9h.01M15 13h.01M15 17h.01"/>'
+    Office:'<path d="M3 21V5l9-3 9 3v16M9 9h.01M9 13h.01M9 17h.01M15 9h.01M15 13h.01M15 17h.01"/>',
+    'Strata Management':'<path d="M3 21h18M6 21V8h6v13M14 21V11h6v10M9 12h.01M9 16h.01M17 14h.01M17 18h.01"/>',
+    'Hospitality Management':'<path d="M3 21h18M5 21V10h4V21M9 14h.01M9 18h.01M13 21V6l8 4v11M17 12h.01M17 16h.01"/>',
+    'Shopping Centre Management':'<path d="M3 9l1.5-5h15L21 9M3 9v11h18V9M3 9h18M8 13h2M14 13h2M8 17h8"/>'
   };
   return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">'+
-    (icons[ind]||'')+'</svg>';
+    (icons[ind]||'<circle cx="12" cy="12" r="9"/>')+'</svg>';
 }
 
 /* ============================================================

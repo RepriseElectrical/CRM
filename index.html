@@ -1333,13 +1333,71 @@ async function loadFromSheet(){
   if(!res.ok) throw new Error('HTTP '+res.status);
   var json = await res.json();
   if(json && json.ok){
-    applyData(json.data||{});
+    var d = json.data || {};
+    /* ---- DATA-LOSS GUARD: detect dangerous "empty sheet but local has data" ---- */
+    var sheetCount = (d.companies||[]).length;
+    var localRaw = lsGet(STORE_KEY);
+    var localCount = 0;
+    if(localRaw){
+      try{ localCount = (JSON.parse(localRaw).companies||[]).length; }catch(e){}
+    }
+    if(sheetCount===0 && localCount>0){
+      /* Sheet says empty but this device remembers companies. Refuse to silently
+         adopt the empty sheet — that's exactly the data-loss path. Pause and ask. */
+      var keepLocal = confirm(
+        'DATA SAFETY CHECK\n\n'+
+        'The shared sheet appears EMPTY but this device has '+localCount+' company record(s) saved locally.\n\n'+
+        'This usually means another browser opened with no cache and accidentally saved an empty list.\n\n'+
+        'Click OK to keep this device\u2019s '+localCount+' companies (recommended).\n'+
+        'Click Cancel to accept the empty sheet (only if you really did delete everything).'
+      );
+      if(keepLocal){
+        /* keep local; do NOT apply the empty sheet data, and push local up */
+        try{ applyData(JSON.parse(localRaw)); }catch(e){}
+        lastLoadedSheetCount = localCount;
+        lastSyncAt = Date.now();
+        /* push local data back to the sheet to repair it */
+        saveToSheet().catch(function(e){ console.error('repair save failed',e); });
+        toast('Kept this device\u2019s '+localCount+' companies. Sheet repaired.');
+        return true;
+      }
+    }
+    applyData(d);
+    lastLoadedSheetCount = sheetCount;
     lastSyncAt = Date.now();
     return true;
   }
   throw new Error(json && json.error ? json.error : 'Bad response');
 }
+
+/* tracks the count we last *loaded* from the sheet — the save guard uses this.
+   Starts as null to mean "no successful load yet" — saves are blocked entirely
+   until at least one successful load has happened. This prevents the case
+   where a load failure silently leaves us with empty state that then gets saved. */
+var lastLoadedSheetCount = null;
+
 async function saveToSheet(){
+  /* ---- HARD DATA-LOSS GUARDS ----
+     Never save if we haven't successfully loaded yet — otherwise an empty initial
+     state could overwrite a healthy sheet. And never save an empty companies list
+     over a sheet that previously had companies. */
+  var aboutToSave = state.companies.length;
+  if(lastLoadedSheetCount===null){
+    console.error('BLOCKED: refused to save before a successful sheet load');
+    toast('Save blocked: connecting to sheet first. Wait a moment and try again.');
+    throw new Error('Save blocked — no successful load yet');
+  }
+  if(aboutToSave===0 && lastLoadedSheetCount>0){
+    console.error('BLOCKED: refused to save empty companies list over sheet with '+
+                  lastLoadedSheetCount+' records');
+    toast('Save blocked: would have erased '+lastLoadedSheetCount+' companies. Refresh the page.');
+    throw new Error('Save blocked by data-loss guard');
+  }
+  /* extra: warn (don't block) on a large shrink — e.g. 40 -> 3 */
+  if(lastLoadedSheetCount>5 && aboutToSave < lastLoadedSheetCount * 0.5){
+    console.warn('Saving '+aboutToSave+' companies — was '+lastLoadedSheetCount+'. Proceeding but check this is intentional.');
+  }
+
   /* text/plain avoids a CORS preflight against Apps Script */
   var res = await fetch(syncURL,{
     method:'POST',
@@ -1349,6 +1407,7 @@ async function saveToSheet(){
   if(!res.ok) throw new Error('HTTP '+res.status);
   var json = await res.json();
   if(!(json && json.ok)) throw new Error(json && json.error ? json.error : 'Save rejected');
+  lastLoadedSheetCount = aboutToSave; /* successful save -> sheet now matches */
   lastSyncAt = Date.now();
   return true;
 }
@@ -2716,13 +2775,21 @@ function renderSettings(){
           'The shared sheet already has '+remoteCount+' company record(s).\n\n'+
           'Click OK to use the SHARED data (recommended — this is the team list).\n'+
           'Click Cancel to stop and instead push this device\u2019s '+localCount+' record(s) up.');
+      } else if(remoteCount===0 && localCount>0){
+        /* Sheet empty, this device has data — confirm the push to avoid accidents */
+        proceed = !confirm(
+          'The shared sheet is EMPTY but this device has '+localCount+' company record(s).\n\n'+
+          'Click OK to push this device\u2019s data to the sheet (recommended).\n'+
+          'Click Cancel if you think the sheet should already have data — stop and check before connecting.');
+        /* note: proceed=false here means "push local up" path */
       }
       saveSyncLink(url).then(function(){
         if(proceed){
           /* adopt the shared data */
           applyData(remoteData);
+          lastLoadedSheetCount = remoteCount;
           syncMode='sheet';
-          if(remoteCount===0){ saveToSheet(); } /* seed empty sheet with our data */
+          if(remoteCount===0 && localCount===0){ saveToSheet(); } /* both empty, fresh setup */
           setSyncBadge('synced');
           renderSidebarCounts();
           setMsg('Connected. You\u2019re now on the shared list.','var(--green)');
@@ -2731,6 +2798,7 @@ function renderSettings(){
         } else {
           /* keep local data, push it up */
           syncMode='sheet';
+          lastLoadedSheetCount = localCount; /* prevents guard from blocking this push */
           saveToSheet().then(function(){
             setSyncBadge('synced');
             setMsg('Connected — this device\u2019s data was pushed to the shared sheet.','var(--green)');

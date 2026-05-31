@@ -799,6 +799,19 @@ input,select,textarea{font-family:var(--sans);}
   </div>
 </div>
 
+<div class="modal-veil" id="importModal">
+  <div class="modal wide">
+    <div class="modal-head">
+      <h2 id="importModalTitle">Import Companies</h2>
+      <button class="modal-close" data-close-modal="importModal">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="importModalBody"></div>
+    <div class="modal-foot" id="importModalFoot"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
   <span id="toastMsg">Saved</span>
@@ -812,12 +825,13 @@ input,select,textarea{font-family:var(--sans);}
 'use strict';
 
 /* ---------- CONSTANTS ---------- */
-var INDUSTRIES = ['Hotel','Restaurant','Pub','Retail','Office','Strata Management','Hospitality Management','Shopping Centre Management'];
+var INDUSTRIES = ['Hotel','Restaurant','Pub','Retail','Office','Strata Management','Building Management','Hospitality Management','Shopping Centre Management','Commercial Real Estate Agency'];
 /* Categories visually grouped in the sidebar — "Direct venues" first, then "Management companies".
-   The first five are the venues themselves; the last three are companies that manage multiple sites. */
+   The first five are the venues themselves; the rest are companies that manage multiple sites
+   or represent property owners. */
 var INDUSTRY_GROUPS = [
   { label:'Direct venues',        items:['Hotel','Restaurant','Pub','Retail','Office'] },
-  { label:'Management companies', items:['Strata Management','Hospitality Management','Shopping Centre Management'] }
+  { label:'Management companies', items:['Strata Management','Building Management','Hospitality Management','Shopping Centre Management','Commercial Real Estate Agency'] }
 ];
 var STAGES = {
   'new':       {label:'New Lead',     color:'var(--text-faint)'},
@@ -1719,8 +1733,10 @@ function industryIcon(ind){
     Retail:'<path d="M3 9l1.5-5h15L21 9M3 9v11h18V9M3 9h18M9 13h6"/>',
     Office:'<path d="M3 21V5l9-3 9 3v16M9 9h.01M9 13h.01M9 17h.01M15 9h.01M15 13h.01M15 17h.01"/>',
     'Strata Management':'<path d="M3 21h18M6 21V8h6v13M14 21V11h6v10M9 12h.01M9 16h.01M17 14h.01M17 18h.01"/>',
+    'Building Management':'<path d="M4 21V3h11v18M15 21V8h5v13M7 7h.01M7 11h.01M7 15h.01M11 7h.01M11 11h.01M11 15h.01"/>',
     'Hospitality Management':'<path d="M3 21h18M5 21V10h4V21M9 14h.01M9 18h.01M13 21V6l8 4v11M17 12h.01M17 16h.01"/>',
-    'Shopping Centre Management':'<path d="M3 9l1.5-5h15L21 9M3 9v11h18V9M3 9h18M8 13h2M14 13h2M8 17h8"/>'
+    'Shopping Centre Management':'<path d="M3 9l1.5-5h15L21 9M3 9v11h18V9M3 9h18M8 13h2M14 13h2M8 17h8"/>',
+    'Commercial Real Estate Agency':'<path d="M3 9l9-6 9 6v12H3V9zM9 21V12h6v9M9 7h.01M15 7h.01"/>'
   };
   return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">'+
     (icons[ind]||'<circle cx="12" cy="12" r="9"/>')+'</svg>';
@@ -2673,6 +2689,251 @@ function deleteTemplate(){
 }
 
 /* ============================================================
+   IMPORT — BULK COMPANY IMPORT FROM SPREADSHEET
+   ------------------------------------------------------------
+   Accepts tab-separated text pasted from Excel/Sheets. Parses,
+   validates, previews, then commits in one batch. Safety rules:
+   - never deletes or replaces existing companies
+   - duplicate company names (case-insensitive) are skipped
+   - import only commits after preview confirmation
+   - the save-guards from elsewhere still apply on commit
+   ============================================================ */
+
+var importParsed = null;  /* holds the parsed rows + analysis between paste and commit */
+
+function openImportModal(){
+  importParsed = null;
+  document.getElementById('importModalBody').innerHTML =
+    '<p style="font-size:13px;color:var(--text);margin-bottom:14px;line-height:1.65;">'+
+      'Copy the rows from your spreadsheet (including the header row) and paste below. '+
+      'The first row must be a header row. Recognised column names: '+
+      '<code style="font-family:var(--mono);font-size:11px;background:var(--paper-2);padding:1px 5px;border-radius:3px;">Company</code>, '+
+      '<code style="font-family:var(--mono);font-size:11px;background:var(--paper-2);padding:1px 5px;border-radius:3px;">Industry</code> '+
+      '(or Type), '+
+      '<code style="font-family:var(--mono);font-size:11px;background:var(--paper-2);padding:1px 5px;border-radius:3px;">Address</code>, '+
+      '<code style="font-family:var(--mono);font-size:11px;background:var(--paper-2);padding:1px 5px;border-radius:3px;">Phone</code>, '+
+      '<code style="font-family:var(--mono);font-size:11px;background:var(--paper-2);padding:1px 5px;border-radius:3px;">Email</code>, '+
+      '<code style="font-family:var(--mono);font-size:11px;background:var(--paper-2);padding:1px 5px;border-radius:3px;">Email 2</code>, '+
+      '<code style="font-family:var(--mono);font-size:11px;background:var(--paper-2);padding:1px 5px;border-radius:3px;">Notes</code>, '+
+      '<code style="font-family:var(--mono);font-size:11px;background:var(--paper-2);padding:1px 5px;border-radius:3px;">Contact Name</code>, '+
+      '<code style="font-family:var(--mono);font-size:11px;background:var(--paper-2);padding:1px 5px;border-radius:3px;">Website</code>.</p>'+
+    '<div class="form-field full">'+
+      '<label>Paste rows from spreadsheet</label>'+
+      '<textarea id="importPaste" style="min-height:200px;font-family:var(--mono);font-size:11px;" placeholder="Paste here — Excel rows separate with tabs, which is what the CRM expects."></textarea>'+
+    '</div>'+
+    '<div id="importPreview" style="margin-top:14px;"></div>';
+
+  document.getElementById('importModalFoot').innerHTML =
+    '<button class="btn btn-ghost" data-close-modal="importModal">Cancel</button>'+
+    '<button class="btn btn-ghost" id="parseImportBtn">Preview Import</button>'+
+    '<button class="btn btn-primary" id="commitImportBtn" disabled>Commit Import</button>';
+
+  document.getElementById('parseImportBtn').addEventListener('click', parseImport);
+  document.getElementById('commitImportBtn').addEventListener('click', commitImport);
+
+  openModal('importModal');
+}
+
+/* parse tab-separated text from Excel */
+function parseImport(){
+  var raw = document.getElementById('importPaste').value;
+  if(!raw.trim()){
+    toast('Paste your spreadsheet rows first');
+    return;
+  }
+  var lines = raw.split(/\r?\n/).filter(function(l){return l.trim();});
+  if(lines.length<2){
+    toast('Need a header row plus at least one data row');
+    return;
+  }
+  /* split each line by tab */
+  var rows = lines.map(function(l){ return l.split('\t'); });
+  var headers = rows[0].map(function(h){ return h.trim(); });
+  var dataRows = rows.slice(1);
+
+  /* map header names to canonical field names */
+  function fieldOf(h){
+    var s = h.toLowerCase();
+    if(s==='company' || s==='company name' || s==='shopping centre' || s==='name') return 'name';
+    if(s==='industry' || s==='type') return 'industry';
+    if(s==='address' || s==='building/address') return 'address';
+    if(s==='phone' || s==='phone number') return 'phone';
+    if(s==='email' || s==='email address') return 'email';
+    if(s==='email 2' || s==='secondary email') return 'email2';
+    if(s==='notes' || s==='note') return 'notes';
+    if(s==='contact name' || s==='contact') return 'contactName';
+    if(s==='website' || s==='url') return 'website';
+    if(s==='owner / operator' || s==='owner/operator') return 'ownerOperator';
+    if(s==='fm company' || s==='facility manager') return 'fmCompany';
+    if(s==='suburb') return 'suburb';
+    return null;
+  }
+  var fieldMap = headers.map(fieldOf);
+  /* must at least have a name column */
+  if(fieldMap.indexOf('name')<0){
+    toast('Could not find a Company / Company Name / Shopping Centre column in the header row');
+    return;
+  }
+
+  /* normalise industry value to a valid CRM category, or flag unknown */
+  function normaliseIndustry(s){
+    if(!s) return '';
+    var t = String(s).trim();
+    for(var i=0;i<INDUSTRIES.length;i++){
+      if(INDUSTRIES[i].toLowerCase()===t.toLowerCase()) return INDUSTRIES[i];
+    }
+    return t; /* unmatched — leave as-is so user can see it */
+  }
+
+  /* existing company names for duplicate-detection */
+  var existingNames = {};
+  state.companies.forEach(function(c){
+    if(c.name) existingNames[c.name.toLowerCase().trim()] = true;
+  });
+
+  /* build the parsed companies + a separate list of issues */
+  var parsed = [];
+  var skippedDuplicates = [];
+  var errors = [];
+  var unknownIndustries = {};
+
+  dataRows.forEach(function(row, idx){
+    var rec = {};
+    for(var i=0;i<row.length && i<fieldMap.length;i++){
+      var f = fieldMap[i];
+      if(f) rec[f] = (row[i]||'').trim();
+    }
+    /* determine the "best" company name: explicit name, or owner-operator for SC,
+       or shopping centre name as fallback */
+    var name = rec.name || rec.ownerOperator || '';
+    if(!name){ errors.push('Row '+(idx+2)+': no company name'); return; }
+
+    /* duplicate check */
+    if(existingNames[name.toLowerCase().trim()]){
+      skippedDuplicates.push(name);
+      return;
+    }
+
+    /* normalise industry; track unknown values */
+    var industry = normaliseIndustry(rec.industry);
+    if(industry && INDUSTRIES.indexOf(industry)<0){
+      unknownIndustries[industry] = (unknownIndustries[industry]||0)+1;
+    }
+
+    /* assemble notes — combine free-form notes + any extra context columns */
+    var notesParts = [];
+    if(rec.notes) notesParts.push(rec.notes);
+    if(rec.suburb && !((rec.address||'').toLowerCase().indexOf(String(rec.suburb).toLowerCase())>=0)){
+      notesParts.push('Suburb: '+rec.suburb);
+    }
+    if(rec.fmCompany && rec.fmCompany.toLowerCase()!==name.toLowerCase()){
+      notesParts.push('FM Company: '+rec.fmCompany);
+    }
+    /* generic-email flag: helps mark "needs a call to get a named contact" */
+    var emailL = (rec.email||'').toLowerCase();
+    var isGenericEmail = emailL && (
+      emailL.indexOf('info@')===0 || emailL.indexOf('admin@')===0 ||
+      emailL.indexOf('enquiries@')===0 || emailL.indexOf('reception@')===0 ||
+      emailL.indexOf('hello@')===0 || emailL.indexOf('contact@')===0 ||
+      emailL.indexOf('marketing@')===0 || emailL.indexOf('sydney@')===0);
+    if(isGenericEmail){
+      notesParts.push('Generic email only — call to get a named contact.');
+    }
+
+    /* build contacts: first email = primary contact, second email = second contact.
+       Contact names left BLANK per user instruction. */
+    var contacts = [];
+    if(rec.email){
+      contacts.push({ name:'', email:rec.email, phone:rec.phone||'', position:'' });
+    }
+    if(rec.email2){
+      contacts.push({ name:'', email:rec.email2, phone:'', position:'(alternate email)' });
+    }
+    /* if no email at all but a phone: still create a contact with just the phone */
+    if(!contacts.length && rec.phone){
+      contacts.push({ name:'', email:'', phone:rec.phone, position:'' });
+      notesParts.push('No email available — call only.');
+    }
+
+    parsed.push({
+      id: uid(),
+      name: name,
+      industry: industry,
+      website: rec.website || '',
+      address: rec.address || '',
+      notes: notesParts.join(' · '),
+      contacts: contacts,
+      stageHistory: { lead: Date.now() }
+    });
+  });
+
+  importParsed = {
+    rows: parsed,
+    skippedDuplicates: skippedDuplicates,
+    errors: errors,
+    unknownIndustries: unknownIndustries
+  };
+
+  /* render preview */
+  var prev = document.getElementById('importPreview');
+  var html = '<div style="background:var(--paper-2);border:1px solid var(--line);border-radius:3px;padding:14px;">'+
+    '<div class="field-label" style="margin-bottom:10px;">Import preview</div>'+
+    '<div style="font-size:13px;color:var(--text);line-height:1.7;">'+
+      '<strong>'+parsed.length+'</strong> new companies will be added.<br>'+
+      (skippedDuplicates.length?'<strong>'+skippedDuplicates.length+'</strong> duplicate(s) will be skipped: '+esc(skippedDuplicates.slice(0,3).join(', '))+(skippedDuplicates.length>3?' …':'')+'<br>':'')+
+      (errors.length?'<strong style="color:var(--rust);">'+errors.length+'</strong> error(s): '+esc(errors.slice(0,3).join('; '))+(errors.length>3?' …':'')+'<br>':'')+
+    '</div>';
+  /* unknown industries warning */
+  var unknownKeys = Object.keys(unknownIndustries);
+  if(unknownKeys.length){
+    html += '<div class="compose-hint" style="margin-top:12px;border-left:3px solid var(--amber);">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>'+
+      '<div><strong>Unknown industry values</strong> in '+unknownKeys.length+' value(s): '+
+      esc(unknownKeys.join(', '))+'. These rows will import with the industry left as typed — '+
+      'you may want to fix the spreadsheet first to match an existing category.</div>'+
+    '</div>';
+  }
+  /* sample preview - first 3 rows */
+  if(parsed.length){
+    html += '<div style="margin-top:14px;font-family:var(--mono);font-size:10px;color:var(--text-mut);line-height:1.6;max-height:140px;overflow-y:auto;border-top:1px solid var(--line);padding-top:10px;">';
+    parsed.slice(0,5).forEach(function(c){
+      html += esc(c.name)+' &middot; '+esc(c.industry||'(no industry)')+' &middot; '+
+        esc(c.contacts.length?c.contacts[0].email||c.contacts[0].phone:'(no contact)')+'<br>';
+    });
+    if(parsed.length>5) html += '… and '+(parsed.length-5)+' more<br>';
+    html += '</div>';
+  }
+  html += '</div>';
+  prev.innerHTML = html;
+
+  /* enable commit only if there's something to commit */
+  document.getElementById('commitImportBtn').disabled = (parsed.length===0);
+}
+
+function commitImport(){
+  if(!importParsed || !importParsed.rows.length){
+    toast('Nothing to import — preview first');
+    return;
+  }
+  var count = importParsed.rows.length;
+  if(!confirm('Add '+count+' companies to the CRM? This cannot be undone except by deleting them individually.')) return;
+
+  /* commit: append all parsed rows to state.companies, then save once */
+  importParsed.rows.forEach(function(c){
+    state.companies.push(c);
+  });
+
+  /* single save through the guarded path */
+  saveState(); /* uses standard save with all the guards */
+
+  toast(count+' companies imported');
+  closeModal('importModal');
+  renderSidebarCounts();
+  go('companies');
+  importParsed = null;
+}
+
+/* ============================================================
    RENDER — SETTINGS
    ============================================================ */
 function renderSettings(){
@@ -2748,6 +3009,24 @@ function renderSettings(){
         '<div>A set of standard fallback templates exists behind the scenes — used '+
         'only if no custom template is available, so an email can always be sent.</div>'+
       '</div>'+
+    '</div>'+
+
+    '<div class="panel settings-card">'+
+      '<div class="panel-head"><div class="panel-title">Import Companies</div>'+
+        '<div class="panel-tag">Bulk add</div></div>'+
+      '<p style="font-size:12px;color:var(--text-mut);margin-bottom:14px;line-height:1.6;">'+
+        'Bulk-add companies from a spreadsheet. Copy the rows from Excel (including the '+
+        'header row), paste them into the import window, and the CRM previews what will '+
+        'be added before you confirm. Existing companies are never touched — duplicates '+
+        'are detected by company name and skipped.</p>'+
+      '<button class="btn btn-ghost btn-sm" id="openImportBtn">'+
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5M5 19h14"/></svg>'+
+        'Import Companies</button>'+
+      '<div class="compose-hint" style="margin-top:14px;">'+
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>'+
+        '<div>Required columns: Company, Industry, Address, Phone, Email. Optional: '+
+        'Email 2, Notes, Contact Name, Website. The header row must use these names exactly.</div>'+
+      '</div>'+
     '</div>';
 
   /* ---- sync controls ---- */
@@ -2758,6 +3037,8 @@ function renderSettings(){
   }
   var goTpl = document.getElementById('goToTemplatesBtn');
   if(goTpl) goTpl.addEventListener('click',function(){ go('templates'); });
+  var openImp = document.getElementById('openImportBtn');
+  if(openImp) openImp.addEventListener('click',function(){ openImportModal(); });
   document.getElementById('connectSyncBtn').addEventListener('click',function(){
     var url = document.getElementById('syncInput').value.trim();
     if(!url){ setMsg('Paste your connection link first.','var(--rust)'); return; }

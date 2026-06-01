@@ -1413,14 +1413,38 @@ async function saveToSheet(){
   }
 
   /* text/plain avoids a CORS preflight against Apps Script */
-  var res = await fetch(syncURL,{
-    method:'POST',
-    headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body:JSON.stringify(packData())
-  });
-  if(!res.ok) throw new Error('HTTP '+res.status);
-  var json = await res.json();
-  if(!(json && json.ok)) throw new Error(json && json.error ? json.error : 'Save rejected');
+  var res;
+  try{
+    res = await fetch(syncURL,{
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify(packData())
+    });
+  } catch(networkErr){
+    /* network failure - couldn't reach Apps Script at all */
+    throw new Error('Network error reaching sheet — check your connection. ('+networkErr.message+')');
+  }
+  if(!res.ok){
+    var errBody = '';
+    try{ errBody = await res.text(); }catch(e){}
+    throw new Error('Sheet save failed (HTTP '+res.status+'). '+
+      (errBody?'Response: '+errBody.substring(0,300):''));
+  }
+  /* response may be JSON or, if Apps Script errored, an HTML error page */
+  var responseText;
+  try{ responseText = await res.text(); }catch(e){
+    throw new Error('Could not read response from sheet');
+  }
+  var json;
+  try{ json = JSON.parse(responseText); }
+  catch(parseErr){
+    /* Apps Script returned non-JSON — usually an HTML error page or quota notice */
+    throw new Error('Sheet returned unexpected response. First 200 chars: '+
+      responseText.substring(0,200));
+  }
+  if(!(json && json.ok)){
+    throw new Error(json && json.error ? json.error : 'Save rejected by Apps Script');
+  }
   lastLoadedSheetCount = aboutToSave; /* successful save -> sheet now matches */
   lastSyncAt = Date.now();
   return true;
@@ -1489,6 +1513,8 @@ async function loadState(){
 }
 
 /* ---- unified save (debounced so rapid edits = one write) ---- */
+var lastSaveError = null;  /* last sync error message, shown in Settings */
+
 function saveState(){
   /* always keep a local copy as a safety net */
   saveLocal();
@@ -1498,12 +1524,32 @@ function saveState(){
   saveTimer = setTimeout(function(){
     saveToSheet().then(function(){
       setSyncBadge('synced');
+      lastSaveError = null;
     },function(e){
       console.error('Sheet save failed:',e);
       setSyncBadge('error');
-      toast('Sync failed — saved on this device, will retry');
+      lastSaveError = e.message || String(e);
+      /* show real error reason, with link to Settings for details */
+      toast('Sync failed: '+lastSaveError.substring(0,80)+' — see Settings to retry');
     });
   },700);
+}
+
+/* manual retry — used from a button in Settings */
+function retrySync(){
+  setSyncBadge('saving');
+  saveToSheet().then(function(){
+    setSyncBadge('synced');
+    lastSaveError = null;
+    toast('Sync succeeded — data is now in the sheet');
+    if(state.view==='settings') renderSettings();
+  },function(e){
+    console.error('Retry sync failed:',e);
+    setSyncBadge('error');
+    lastSaveError = e.message || String(e);
+    toast('Retry failed: '+lastSaveError.substring(0,80));
+    if(state.view==='settings') renderSettings();
+  });
 }
 
 /* test a link without committing to it */
@@ -2972,6 +3018,16 @@ function renderSettings(){
           : '')+
       '</div>'+
       '<div id="syncMsg" style="font-size:11px;margin-top:11px;color:var(--text-mut);"></div>'+
+      (lastSaveError
+        ? '<div style="margin-top:14px;padding:12px 14px;background:#FBEEEA;border:1px solid #E8C9BD;border-left:3px solid var(--rust);border-radius:3px;">'+
+            '<div style="font-family:var(--mono);font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:var(--rust);margin-bottom:6px;">Last sync error</div>'+
+            '<div style="font-size:12px;color:var(--text);line-height:1.6;margin-bottom:10px;font-family:var(--mono);word-break:break-word;">'+esc(lastSaveError)+'</div>'+
+            '<div style="font-size:11px;color:var(--text-mut);line-height:1.6;margin-bottom:10px;">Your data is saved on this device. Click Retry to push it to the sheet again.</div>'+
+            '<button class="btn btn-primary btn-sm" id="retrySyncBtn">'+
+              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>'+
+              'Retry Sync</button>'+
+          '</div>'
+        : '')+
     '</div>'+
 
     '<div class="panel settings-card" style="margin-bottom:18px;">'+
@@ -3039,6 +3095,8 @@ function renderSettings(){
   if(goTpl) goTpl.addEventListener('click',function(){ go('templates'); });
   var openImp = document.getElementById('openImportBtn');
   if(openImp) openImp.addEventListener('click',function(){ openImportModal(); });
+  var retryBtn = document.getElementById('retrySyncBtn');
+  if(retryBtn) retryBtn.addEventListener('click', retrySync);
   document.getElementById('connectSyncBtn').addEventListener('click',function(){
     var url = document.getElementById('syncInput').value.trim();
     if(!url){ setMsg('Paste your connection link first.','var(--rust)'); return; }
